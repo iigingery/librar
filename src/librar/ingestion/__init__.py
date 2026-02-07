@@ -1,3 +1,5 @@
 """Ingestion package interfaces."""
 
-__all__: list[str] = []
+from .ingestor import DocumentIngestor, IngestionError
+
+__all__ = ["DocumentIngestor", "IngestionError"]

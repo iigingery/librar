@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from librar.ingestion.adapters.base import IngestionAdapter
+from librar.ingestion.ingestor import DocumentIngestor, IngestionError
 from librar.ingestion.models import DocumentBlock, ExtractedDocument, ExtractedMetadata, SourceRef
 from librar.ingestion.normalization import normalize_text, normalize_whitespace
 
@@ -57,3 +59,36 @@ def test_adapter_contract_matches_protocol() -> None:
 def test_normalization_helpers_are_stable() -> None:
     assert normalize_whitespace("  one\n\t two   ") == "one two"
     assert normalize_text("  Те\u0301КСТ\n ") == "те\u0301кст"
+
+
+def test_ingestor_registers_adapters_and_returns_canonical_type() -> None:
+    ingestor = DocumentIngestor()
+    adapter = _StubAdapter()
+    ingestor.register_adapter("txt", adapter)
+
+    with TemporaryDirectory() as tmp:
+        sample = Path(tmp) / "note.txt"
+        sample.write_text("hello", encoding="utf-8")
+
+        result = ingestor.ingest(sample)
+
+    assert "txt" in ingestor.adapter_map
+    assert isinstance(result, ExtractedDocument)
+    assert result.metadata.format == "txt"
+
+
+def test_ingestor_error_includes_source_path_context() -> None:
+    ingestor = DocumentIngestor()
+
+    with TemporaryDirectory() as tmp:
+        sample = Path(tmp) / "note.unknown"
+        sample.write_text("content", encoding="utf-8")
+
+        try:
+            ingestor.ingest(sample)
+            raised = None
+        except IngestionError as err:
+            raised = err
+
+    assert raised is not None
+    assert str(sample) in str(raised)
