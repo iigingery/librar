@@ -18,6 +18,8 @@ def test_schema_initialization_creates_expected_tables(tmp_path: Path) -> None:
         assert "chunks" in table_names
         assert "index_state" in table_names
         assert "chunks_fts" in table_names
+        assert "semantic_index_state" in table_names
+        assert "semantic_chunk_state" in table_names
 
 
 def test_fts_is_queryable_with_external_content_sync(tmp_path: Path) -> None:

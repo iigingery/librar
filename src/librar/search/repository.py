@@ -29,6 +29,20 @@ class IndexStateRow:
     mtime_ns: int
 
 
+@dataclass(slots=True)
+class ChunkTextRow:
+    chunk_id: int
+    book_id: int
+    source_path: str
+    chunk_no: int
+    raw_text: str
+    page: int | None
+    chapter: str | None
+    item_id: str | None
+    char_start: int | None
+    char_end: int | None
+
+
 class SearchRepository:
     """Thin transactional layer over SQLite search schema."""
 
@@ -159,3 +173,108 @@ class SearchRepository:
             rebuild_fts(self._connection)
             return
         raise ValueError(f"Unsupported maintenance command: {command}")
+
+    def iter_chunks(self, *, limit: int | None = None, offset: int = 0) -> list[ChunkTextRow]:
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+
+        if limit is None:
+            rows = self._connection.execute(
+                """
+                SELECT
+                    c.id AS chunk_id,
+                    c.book_id AS book_id,
+                    b.source_path AS source_path,
+                    c.chunk_no AS chunk_no,
+                    c.raw_text AS raw_text,
+                    c.page AS page,
+                    c.chapter AS chapter,
+                    c.item_id AS item_id,
+                    c.char_start AS char_start,
+                    c.char_end AS char_end
+                FROM chunks c
+                JOIN books b ON b.id = c.book_id
+                ORDER BY c.id ASC
+                """
+            ).fetchall()
+        else:
+            if limit <= 0:
+                raise ValueError("limit must be positive")
+            rows = self._connection.execute(
+                """
+                SELECT
+                    c.id AS chunk_id,
+                    c.book_id AS book_id,
+                    b.source_path AS source_path,
+                    c.chunk_no AS chunk_no,
+                    c.raw_text AS raw_text,
+                    c.page AS page,
+                    c.chapter AS chapter,
+                    c.item_id AS item_id,
+                    c.char_start AS char_start,
+                    c.char_end AS char_end
+                FROM chunks c
+                JOIN books b ON b.id = c.book_id
+                ORDER BY c.id ASC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+
+        return [
+            ChunkTextRow(
+                chunk_id=int(row["chunk_id"]),
+                book_id=int(row["book_id"]),
+                source_path=row["source_path"],
+                chunk_no=int(row["chunk_no"]),
+                raw_text=row["raw_text"],
+                page=row["page"],
+                chapter=row["chapter"],
+                item_id=row["item_id"],
+                char_start=row["char_start"],
+                char_end=row["char_end"],
+            )
+            for row in rows
+        ]
+
+    def fetch_chunks_by_ids(self, chunk_ids: list[int]) -> list[ChunkTextRow]:
+        if not chunk_ids:
+            return []
+
+        placeholders = ",".join("?" for _ in chunk_ids)
+        rows = self._connection.execute(
+            f"""
+            SELECT
+                c.id AS chunk_id,
+                c.book_id AS book_id,
+                b.source_path AS source_path,
+                c.chunk_no AS chunk_no,
+                c.raw_text AS raw_text,
+                c.page AS page,
+                c.chapter AS chapter,
+                c.item_id AS item_id,
+                c.char_start AS char_start,
+                c.char_end AS char_end
+            FROM chunks c
+            JOIN books b ON b.id = c.book_id
+            WHERE c.id IN ({placeholders})
+            ORDER BY c.id ASC
+            """,
+            tuple(chunk_ids),
+        ).fetchall()
+
+        return [
+            ChunkTextRow(
+                chunk_id=int(row["chunk_id"]),
+                book_id=int(row["book_id"]),
+                source_path=row["source_path"],
+                chunk_no=int(row["chunk_no"]),
+                raw_text=row["raw_text"],
+                page=row["page"],
+                chapter=row["chapter"],
+                item_id=row["item_id"],
+                char_start=row["char_start"],
+                char_end=row["char_end"],
+            )
+            for row in rows
+        ]

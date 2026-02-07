@@ -63,8 +63,28 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS semantic_index_state (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            model TEXT NOT NULL,
+            dimension INTEGER NOT NULL,
+            metric TEXT NOT NULL DEFAULT 'ip',
+            index_path TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS semantic_chunk_state (
+            chunk_id INTEGER PRIMARY KEY,
+            vector_id INTEGER NOT NULL UNIQUE,
+            model TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_chunks_book_id ON chunks(book_id);
         CREATE INDEX IF NOT EXISTS idx_index_state_book_id ON index_state(book_id);
+        CREATE INDEX IF NOT EXISTS idx_semantic_chunk_state_model ON semantic_chunk_state(model);
+        CREATE INDEX IF NOT EXISTS idx_semantic_chunk_state_vector_id ON semantic_chunk_state(vector_id);
 
         CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
             INSERT INTO chunks_fts(rowid, raw_text, lemma_text)
