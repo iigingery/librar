@@ -3,6 +3,9 @@ EbookLib==0.20
 lxml==6.0.2
 beautifulsoup4==4.14.3
 charset-normalizer==3.4.4
+faiss-cpu==1.13.0
+numpy==1.26.4
+openai==1.47.1
 pymorphy2==0.9.1
 pymorphy2-dicts-ru==2.4.417127.4579844
 razdel==0.5.0
