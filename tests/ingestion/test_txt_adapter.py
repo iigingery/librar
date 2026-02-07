@@ -32,3 +32,16 @@ def test_txt_adapter_decodes_cp1251_and_emits_offsets(tmp_path: Path) -> None:
         assert block.source.char_end is not None
         assert block.source.char_end >= block.source.char_start
         assert block.source.item_id and block.source.item_id.startswith("line-")
+
+
+def test_txt_adapter_reads_cyrillic_windows_style_path(tmp_path: Path) -> None:
+    cyrillic_dir = tmp_path / "тексты_проверка"
+    cyrillic_dir.mkdir()
+    sample = cyrillic_dir / "книга_путь.txt"
+    sample.write_bytes("Название: Свет\n\nТонкая тропа\n".encode("cp1251"))
+
+    result = TXTAdapter().extract(sample)
+
+    assert result.metadata.title == "Свет"
+    assert result.blocks
+    assert any("Тонкая" in block.text for block in result.blocks)

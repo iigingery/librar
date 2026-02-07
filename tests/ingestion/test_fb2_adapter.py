@@ -45,3 +45,18 @@ def test_fb2_adapter_extracts_zipped_fb2_payload() -> None:
     assert result.metadata.title
     assert any(block.source.item_id for block in result.blocks)
     assert _CYRILLIC_RE.search(" ".join(block.text for block in result.blocks))
+
+
+def test_fb2_adapter_reads_file_from_cyrillic_path(tmp_path: Path) -> None:
+    fixture = _pick_fb2_fixture()
+    adapter = FB2Adapter()
+
+    cyrillic_dir = tmp_path / "русская_папка"
+    cyrillic_dir.mkdir()
+    copied = cyrillic_dir / "книга_пример.fb2"
+    copied.write_bytes(fixture.read_bytes())
+
+    result = adapter.extract(copied)
+
+    assert result.blocks
+    assert _CYRILLIC_RE.search(" ".join(block.text for block in result.blocks))
