@@ -25,6 +25,14 @@ class TXTAdapter:
             return True
         if sniffed_bytes is None:
             return False
+
+        if path.suffix.lower() in {".pdf", ".epub", ".fb2", ".fbz", ".zip"}:
+            return False
+
+        prefix = sniffed_bytes.lstrip()
+        if prefix.startswith((b"%PDF-", b"PK\x03\x04", b"<?xml", b"<FictionBook")):
+            return False
+
         return b"\x00" not in sniffed_bytes
 
     def extract(self, path: Path) -> ExtractedDocument:
