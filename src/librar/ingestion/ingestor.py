@@ -34,12 +34,25 @@ class IngestionResult:
 class DocumentIngestor:
     """Resolve the right adapter and return canonical extraction output."""
 
-    def __init__(self, sniff_bytes: int = 4096, *, chunk_size: int = 500, chunk_overlap: int = 100) -> None:
+    def __init__(
+        self,
+        sniff_bytes: int = 4096,
+        *,
+        chunk_size: int = 500,
+        chunk_overlap: int = 100,
+        fingerprint_registry: FingerprintRegistry | None = None,
+    ) -> None:
         self._sniff_bytes = sniff_bytes
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
         self._adapter_map: dict[str, IngestionAdapter] = {}
-        self._fingerprints = FingerprintRegistry()
+        self._fingerprints = fingerprint_registry or FingerprintRegistry()
+
+    @property
+    def fingerprint_registry(self) -> FingerprintRegistry:
+        """Expose fingerprint state for persistence across runs."""
+
+        return self._fingerprints
 
     @property
     def adapter_map(self) -> dict[str, IngestionAdapter]:

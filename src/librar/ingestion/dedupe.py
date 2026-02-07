@@ -36,6 +36,22 @@ class FingerprintRegistry:
         self._binary_hashes: set[str] = set()
         self._normalized_text_hashes: set[str] = set()
 
+    def seed(self, *, binary_hashes: set[str] | None = None, normalized_text_hashes: set[str] | None = None) -> None:
+        """Preload known fingerprint sets for cross-run dedupe."""
+
+        if binary_hashes:
+            self._binary_hashes.update(binary_hashes)
+        if normalized_text_hashes:
+            self._normalized_text_hashes.update(normalized_text_hashes)
+
+    def snapshot(self) -> dict[str, list[str]]:
+        """Export fingerprint sets for persistence."""
+
+        return {
+            "binary_hashes": sorted(self._binary_hashes),
+            "normalized_text_hashes": sorted(self._normalized_text_hashes),
+        }
+
     def evaluate(self, fingerprint: DocumentFingerprint) -> DedupeDecision:
         if fingerprint.binary_hash in self._binary_hashes:
             return DedupeDecision(is_duplicate=True, reason="binary-match", fingerprint=fingerprint)
