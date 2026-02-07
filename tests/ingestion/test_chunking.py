@@ -33,20 +33,38 @@ def test_chunking_applies_overlap_with_deterministic_offsets() -> None:
     document = _doc_with_blocks(
         [
             DocumentBlock(
-                text="Lorem ipsum dolor sit amet consectetur adipiscing elit",
+                text="Alpha one. Beta two is longer. Gamma three. Delta four.",
                 source=SourceRef(page=3, chapter=None, item_id="page-3", char_start=10, char_end=63),
             )
         ]
     )
 
-    chunks = build_chunks(document, max_chars=25, overlap_chars=5)
+    chunks = build_chunks(document, max_chars=40, overlap_chars=12)
 
-    assert len(chunks) >= 2
-    first = chunks[0]
-    second = chunks[1]
-    assert first.source.page == 3
-    assert second.source.page == 3
-    assert first.source.char_start == 10
-    assert first.source.char_end == 35
-    assert second.source.char_start == 30
-    assert first.text[-5:] == second.text[:5]
+    assert [chunk.text for chunk in chunks] == [
+        "Alpha one. Beta two is longer.",
+        "Beta two is longer. Gamma three.",
+        "Gamma three. Delta four.",
+    ]
+    assert chunks[0].source.char_start == 10
+    assert chunks[1].source.char_start == 21
+    assert chunks[2].source.char_start == 41
+
+
+def test_chunk_edges_follow_sentence_boundaries() -> None:
+    document = _doc_with_blocks(
+        [
+            DocumentBlock(
+                text="First full sentence. Second complete sentence. Third ending sentence.",
+                source=SourceRef(page=5, chapter="C", item_id="id-5", char_start=100, char_end=170),
+            )
+        ]
+    )
+
+    chunks = build_chunks(document, max_chars=45, overlap_chars=15)
+
+    assert chunks
+    assert all(chunk.text.endswith(".") for chunk in chunks)
+    assert all(not chunk.text.startswith("ull") for chunk in chunks)
+    assert all(chunk.source.char_start >= 100 for chunk in chunks)
+    assert all(chunk.source.char_end is not None and chunk.source.char_end <= 170 for chunk in chunks)
