@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from librar.cli.index_books import main as index_cli_main
 from librar.search.indexer import SearchIndexer
 
 
@@ -71,3 +73,31 @@ def test_second_run_indexes_only_changed_and_new_books(tmp_path: Path) -> None:
         by_path = {row["source_path"]: int(row["chunk_count"]) for row in counts}
         assert set(by_path) == {str(a_path), str(b_path), str(books_dir / "c.txt")}
         assert all(count > 0 for count in by_path.values())
+
+
+def test_cli_returns_structured_incremental_stats(tmp_path: Path, capsys: object) -> None:
+    books_dir = tmp_path / "books"
+    books_dir.mkdir()
+    _write_txt(books_dir / "one.txt", title="One", body="Книга для проверки CLI.")
+
+    db_path = tmp_path / "search.db"
+
+    first_exit = index_cli_main(["--books-path", str(books_dir), "--db-path", str(db_path)])
+    first_payload = json.loads(capsys.readouterr().out)
+
+    second_exit = index_cli_main(["--books-path", str(books_dir), "--db-path", str(db_path)])
+    second_payload = json.loads(capsys.readouterr().out)
+
+    assert first_exit == 0
+    assert second_exit == 0
+
+    assert first_payload["scanned"] == 1
+    assert first_payload["indexed"] == 1
+    assert first_payload["skipped_unchanged"] == 0
+    assert first_payload["errors"] == 0
+    assert first_payload["duration_ms"] >= 0
+
+    assert second_payload["scanned"] == 1
+    assert second_payload["indexed"] == 0
+    assert second_payload["skipped_unchanged"] == 1
+    assert second_payload["errors"] == 0
