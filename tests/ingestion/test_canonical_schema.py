@@ -73,8 +73,10 @@ def test_ingestor_registers_adapters_and_returns_canonical_type() -> None:
         result = ingestor.ingest(sample)
 
     assert "txt" in ingestor.adapter_map
-    assert isinstance(result, ExtractedDocument)
-    assert result.metadata.format == "txt"
+    assert isinstance(result.document, ExtractedDocument)
+    assert result.document.metadata.format == "txt"
+    assert result.chunks
+    assert result.dedupe.is_duplicate is False
 
 
 def test_ingestor_error_includes_source_path_context() -> None:
