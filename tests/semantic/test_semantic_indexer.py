@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
+from librar.cli.index_semantic import main as index_semantic_main
 from librar.search.repository import ChunkRow, SearchRepository
-from librar.semantic.indexer import SemanticIndexer
+from librar.semantic.indexer import SemanticIndexer, SemanticIndexStats
 from librar.semantic.semantic_repository import SemanticRepository
 
 
@@ -119,3 +122,52 @@ def test_second_run_skips_unchanged_and_only_reembeds_changed_chunks(tmp_path: P
         assert third.errors == 0
 
         assert len(embedder.calls) == 2
+
+
+def test_index_semantic_cli_returns_structured_stats(monkeypatch: pytest.MonkeyPatch, capsys: object) -> None:
+    class _StubIndexer:
+        def __enter__(self) -> "_StubIndexer":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def index_chunks(self) -> SemanticIndexStats:
+            return SemanticIndexStats(
+                scanned_chunks=8,
+                embedded_chunks=3,
+                skipped_unchanged=5,
+                errors=0,
+                duration_ms=42,
+                model="stub-model",
+            )
+
+    def _fake_from_db_path(*, db_path: str, index_path: str, batch_size: int) -> _StubIndexer:
+        assert db_path.endswith("search.db")
+        assert index_path.endswith("semantic.faiss")
+        assert batch_size == 16
+        return _StubIndexer()
+
+    monkeypatch.setattr(
+        SemanticIndexer,
+        "from_db_path",
+        classmethod(lambda cls, *, db_path, index_path, batch_size: _fake_from_db_path(db_path=db_path, index_path=index_path, batch_size=batch_size)),
+    )
+
+    exit_code = index_semantic_main([
+        "--db-path",
+        "tmp/search.db",
+        "--index-path",
+        "tmp/semantic.faiss",
+        "--batch-size",
+        "16",
+    ])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["scanned_chunks"] == 8
+    assert payload["embedded_chunks"] == 3
+    assert payload["skipped_unchanged"] == 5
+    assert payload["errors"] == 0
+    assert payload["duration_ms"] == 42
+    assert payload["model"] == "stub-model"
