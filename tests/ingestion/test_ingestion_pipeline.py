@@ -26,7 +26,14 @@ def _build_epub(path: Path) -> None:
     book.set_title("Pipeline EPUB")
     book.set_language("ru")
     chapter = epub.EpubHtml(title="Chapter 1", file_name="c1.xhtml", lang="ru")
-    chapter.content = "<html><body><p>EPUB pipeline content sample.</p></body></html>"
+    chapter.content = (
+        "<html><body>"
+        "<p>EPUB pipeline content sample.</p>"
+        "<p>Another sentence for readability.</p>"
+        "<p>Second paragraph keeps sentence boundaries clear for overlap behavior.</p>"
+        "<p>Third paragraph finishes the chapter for deterministic chunking tests.</p>"
+        "</body></html>"
+    )
     book.add_item(chapter)
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
@@ -102,3 +109,19 @@ def test_cli_reports_duplicate_on_repeated_run(tmp_path: Path, capsys: object) -
     assert payload_first["results"][0]["is_duplicate"] is False
     assert payload_second["results"][0]["is_duplicate"] is True
     assert payload_second["results"][0]["duplicate_reason"] in {"binary-match", "normalized-content-match"}
+
+
+def test_ingestor_outputs_sentence_safe_chunks_for_multi_block_epub(tmp_path: Path) -> None:
+    epub_path = tmp_path / "sentence-safe.epub"
+    _build_epub(epub_path)
+
+    ingestor = _configured_ingestor()
+    result = ingestor.ingest(epub_path)
+    content_chunks = [chunk for chunk in result.chunks if chunk.text != "Pipeline EPUB Chapter 1"]
+
+    assert len(result.document.blocks) >= 4
+    assert len(result.chunks) >= 3
+    assert all(chunk.text[0].isupper() for chunk in content_chunks)
+    assert all(chunk.text.endswith(".") for chunk in content_chunks)
+    assert "Another sentence for readability." in content_chunks[0].text
+    assert "Another sentence for readability." in content_chunks[1].text

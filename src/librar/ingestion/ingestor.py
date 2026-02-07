@@ -38,8 +38,8 @@ class DocumentIngestor:
         self,
         sniff_bytes: int = 4096,
         *,
-        chunk_size: int = 500,
-        chunk_overlap: int = 100,
+        chunk_size: int = 600,
+        chunk_overlap: int = 120,
         fingerprint_registry: FingerprintRegistry | None = None,
     ) -> None:
         self._sniff_bytes = sniff_bytes
