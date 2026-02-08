@@ -12,12 +12,19 @@ from librar.semantic.semantic_repository import SemanticRepository
 from librar.semantic.vector_store import FaissVectorStore
 
 
-def _seed_book(repo: SearchRepository, source_path: str, body: str) -> None:
+def _seed_book(
+    repo: SearchRepository,
+    source_path: str,
+    body: str,
+    *,
+    author: str = "tester",
+    format_name: str = "txt",
+) -> None:
     repo.replace_book_chunks(
         source_path=source_path,
         title=source_path,
-        author="tester",
-        format_name="txt",
+        author=author,
+        format_name=format_name,
         fingerprint=f"fp-{source_path}",
         mtime_ns=1,
         chunks=[
@@ -128,6 +135,9 @@ def test_semantic_query_returns_ranked_chunk_results(tmp_path: Path) -> None:
         assert hits[0].source_path == "book-a.txt"
         assert hits[0].score >= hits[1].score
         assert "Развитие души" in hits[0].excerpt
+        assert hits[0].title == "book-a.txt"
+        assert hits[0].author == "tester"
+        assert hits[0].format_name == "txt"
 
 
 def test_semantic_query_fails_if_index_not_initialized(tmp_path: Path) -> None:
@@ -169,3 +179,72 @@ def test_semantic_query_skips_missing_chunk_mappings(tmp_path: Path) -> None:
 
         hits = service.search(query="spiritual growth", limit=5)
         assert hits == []
+
+
+def test_semantic_query_supports_author_and_format_filters(tmp_path: Path) -> None:
+    db_path = tmp_path / "semantic.db"
+    index_path = tmp_path / "semantic.faiss"
+
+    with SearchRepository(db_path) as repo:
+        _seed_book(
+            repo,
+            "allowed.fb2",
+            "Развитие души через практику и внимание.",
+            author="Nisargadatta Maharaj",
+            format_name="fb2",
+        )
+        _seed_book(
+            repo,
+            "blocked.txt",
+            "Развитие души через дисциплину.",
+            author="Other Author",
+            format_name="txt",
+        )
+        chunk_a = _chunk_id(repo, "allowed.fb2")
+        chunk_b = _chunk_id(repo, "blocked.txt")
+
+        semantic_repo = SemanticRepository(repo.connection)
+        semantic_repo.upsert_index_state(
+            model="test-semantic-model",
+            dimension=3,
+            metric="ip",
+            index_path=str(index_path),
+        )
+        semantic_repo.upsert_chunk_state(
+            chunk_id=chunk_a,
+            vector_id=chunk_a,
+            model="test-semantic-model",
+            fingerprint="a",
+        )
+        semantic_repo.upsert_chunk_state(
+            chunk_id=chunk_b,
+            vector_id=chunk_b,
+            model="test-semantic-model",
+            fingerprint="b",
+        )
+
+        vector_store = FaissVectorStore(index_path, dimension=3, metric="ip")
+        vector_store.add_or_replace(
+            vector_ids=[chunk_a, chunk_b],
+            vectors=[[1.0, 0.0, 0.0], [0.9, 0.1, 0.0]],
+        )
+        vector_store.save()
+
+        service = SemanticQueryService(
+            search_repository=repo,
+            semantic_repository=semantic_repo,
+            vector_store=vector_store,
+            embedder=_FixedEmbedder([1.0, 0.0, 0.0]),
+        )
+
+        hits = service.search(
+            query="spiritual growth",
+            limit=10,
+            author_filter="mahar",
+            format_filter="fb2",
+        )
+
+    assert len(hits) == 1
+    assert hits[0].source_path == "allowed.fb2"
+    assert hits[0].author == "Nisargadatta Maharaj"
+    assert hits[0].format_name == "fb2"

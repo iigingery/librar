@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -16,20 +16,25 @@ from librar.semantic.vector_store import FaissVectorStore
 
 
 class _QueryEmbedder(Protocol):
-    model: str
+    @property
+    def model(self) -> str:
+        ...
 
     def embed_query(self, query: str) -> np.ndarray:
         ...
 
 
 class _VectorSearcher(Protocol):
-    def search(self, query_vector: np.ndarray, *, top_k: int = 10):
+    def search(self, query_vector: np.ndarray, *, top_k: int = 10) -> list[Any]:
         ...
 
 
 @dataclass(slots=True)
 class SemanticSearchHit:
     source_path: str
+    title: str | None
+    author: str | None
+    format_name: str | None
     chunk_id: int
     chunk_no: int
     page: int | None
@@ -43,6 +48,9 @@ class SemanticSearchHit:
     def to_dict(self) -> dict[str, str | int | float | None]:
         return {
             "source_path": self.source_path,
+            "title": self.title,
+            "author": self.author,
+            "format": self.format_name,
             "chunk_id": self.chunk_id,
             "chunk_no": self.chunk_no,
             "page": self.page,
@@ -106,7 +114,15 @@ class SemanticQueryService:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
-    def search(self, *, query: str, limit: int = 10) -> list[SemanticSearchHit]:
+    def search(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        author_filter: str | None = None,
+        format_filter: str | None = None,
+        candidate_limit: int | None = None,
+    ) -> list[SemanticSearchHit]:
         query_text = query.strip()
         if not query_text:
             return []
@@ -117,8 +133,17 @@ class SemanticQueryService:
         if index_state is None:
             raise RuntimeError("Semantic index is not initialized. Run semantic indexing first.")
 
+        author_value = author_filter.strip().lower() if author_filter and author_filter.strip() else None
+        format_value = format_filter.strip().lower() if format_filter and format_filter.strip() else None
+
         query_vector = self._embedder.embed_query(query_text)
-        vector_hits = self._vector_store.search(query_vector, top_k=limit)
+        top_k = max(limit, candidate_limit or limit)
+        if (author_value or format_value) and hasattr(self._vector_store, "ntotal"):
+            total = int(getattr(self._vector_store, "ntotal") or 0)
+            if total > 0:
+                top_k = max(top_k, total)
+
+        vector_hits = self._vector_store.search(query_vector, top_k=top_k)
         if not vector_hits:
             return []
 
@@ -132,6 +157,11 @@ class SemanticQueryService:
             if chunk is None:
                 continue
 
+            if author_value and (chunk.author is None or author_value not in chunk.author.lower()):
+                continue
+            if format_value and (chunk.format_name is None or chunk.format_name.lower() != format_value):
+                continue
+
             excerpt = chunk.raw_text.strip()
             if len(excerpt) > 300:
                 excerpt = excerpt[:297].rstrip() + "..."
@@ -139,6 +169,9 @@ class SemanticQueryService:
             results.append(
                 SemanticSearchHit(
                     source_path=chunk.source_path,
+                    title=chunk.title,
+                    author=chunk.author,
+                    format_name=chunk.format_name,
                     chunk_id=chunk.chunk_id,
                     chunk_no=chunk.chunk_no,
                     page=chunk.page,
@@ -150,5 +183,8 @@ class SemanticQueryService:
                     excerpt=excerpt,
                 )
             )
+
+            if len(results) >= limit:
+                break
 
         return results

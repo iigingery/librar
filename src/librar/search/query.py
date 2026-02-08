@@ -20,6 +20,7 @@ class SearchHit:
     title: str | None
     author: str | None
     format_name: str | None
+    chunk_id: int
     chunk_no: int
     page: int | None
     chapter: str | None
@@ -35,6 +36,7 @@ class SearchHit:
             "title": self.title,
             "author": self.author,
             "format": self.format_name,
+            "chunk_id": self.chunk_id,
             "chunk_no": self.chunk_no,
             "page": self.page,
             "chapter": self.chapter,
@@ -90,19 +92,32 @@ def search_chunks(
     query: str,
     limit: int = 10,
     phrase_mode: bool = False,
+    author_filter: str | None = None,
+    format_filter: str | None = None,
 ) -> list[SearchHit]:
     match_expression = build_match_expression(query, phrase_mode=phrase_mode)
     if not match_expression:
         return []
 
     safe_limit = max(1, min(limit, 100))
-    rows = connection.execute(
-        """
+    where_clauses = ["chunks_fts MATCH ?"]
+    params: list[object] = [match_expression]
+
+    if author_filter and author_filter.strip():
+        where_clauses.append("LOWER(COALESCE(b.author, '')) LIKE ?")
+        params.append(f"%{author_filter.strip().lower()}%")
+
+    if format_filter and format_filter.strip():
+        where_clauses.append("LOWER(COALESCE(b.format, '')) = ?")
+        params.append(format_filter.strip().lower())
+
+    sql = f"""
         SELECT
             b.source_path AS source_path,
             b.title AS title,
             b.author AS author,
             b.format AS format_name,
+            c.id AS chunk_id,
             c.chunk_no AS chunk_no,
             c.page AS page,
             c.chapter AS chapter,
@@ -115,12 +130,12 @@ def search_chunks(
         FROM chunks_fts
         JOIN chunks c ON c.id = chunks_fts.rowid
         JOIN books b ON b.id = c.book_id
-        WHERE chunks_fts MATCH ?
+        WHERE {' AND '.join(where_clauses)}
         ORDER BY rank ASC, c.id ASC
         LIMIT ?
-        """,
-        (match_expression, safe_limit),
-    ).fetchall()
+    """
+    params.append(safe_limit)
+    rows = connection.execute(sql, tuple(params)).fetchall()
 
     return [
         SearchHit(
@@ -128,6 +143,7 @@ def search_chunks(
             title=row["title"],
             author=row["author"],
             format_name=row["format_name"],
+            chunk_id=int(row["chunk_id"]),
             chunk_no=int(row["chunk_no"]),
             page=row["page"],
             chapter=row["chapter"],

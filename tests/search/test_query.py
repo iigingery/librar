@@ -6,12 +6,20 @@ from librar.search.query import search_chunks
 from librar.search.repository import ChunkRow, SearchRepository
 
 
-def _insert_book(repo: SearchRepository, *, source_path: str, text: str, lemma_text: str) -> None:
+def _insert_book(
+    repo: SearchRepository,
+    *,
+    source_path: str,
+    text: str,
+    lemma_text: str,
+    author: str = "tester",
+    format_name: str = "txt",
+) -> None:
     repo.replace_book_chunks(
         source_path=source_path,
         title=source_path,
-        author="tester",
-        format_name="txt",
+        author=author,
+        format_name=format_name,
         fingerprint=f"fp-{source_path}",
         mtime_ns=1,
         chunks=[
@@ -92,3 +100,38 @@ def test_results_are_sorted_by_rank_then_rowid(tmp_path: Path) -> None:
     assert len(hits) == 2
     assert hits[0].rank <= hits[1].rank
     assert hits[0].source_path == "high.txt"
+
+
+def test_search_supports_author_and_format_filters(tmp_path: Path) -> None:
+    db_path = tmp_path / "search.db"
+
+    with SearchRepository(db_path) as repo:
+        _insert_book(
+            repo,
+            source_path="allowed.fb2",
+            text="книга о духовной практике",
+            lemma_text="книга о духовный практика",
+            author="Nisargadatta Maharaj",
+            format_name="fb2",
+        )
+        _insert_book(
+            repo,
+            source_path="blocked.txt",
+            text="книга о духовной практике",
+            lemma_text="книга о духовный практика",
+            author="Other Author",
+            format_name="txt",
+        )
+
+        hits = search_chunks(
+            repo.connection,
+            query="книга",
+            author_filter="mahar",
+            format_filter="fb2",
+            limit=10,
+        )
+
+    assert len(hits) == 1
+    assert hits[0].source_path == "allowed.fb2"
+    assert hits[0].author == "Nisargadatta Maharaj"
+    assert hits[0].format_name == "fb2"
