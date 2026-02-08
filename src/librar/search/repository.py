@@ -34,6 +34,9 @@ class ChunkTextRow:
     chunk_id: int
     book_id: int
     source_path: str
+    title: str | None
+    author: str | None
+    format_name: str | None
     chunk_no: int
     raw_text: str
     page: int | None
@@ -185,6 +188,9 @@ class SearchRepository:
                     c.id AS chunk_id,
                     c.book_id AS book_id,
                     b.source_path AS source_path,
+                    b.title AS title,
+                    b.author AS author,
+                    b.format AS format_name,
                     c.chunk_no AS chunk_no,
                     c.raw_text AS raw_text,
                     c.page AS page,
@@ -206,6 +212,9 @@ class SearchRepository:
                     c.id AS chunk_id,
                     c.book_id AS book_id,
                     b.source_path AS source_path,
+                    b.title AS title,
+                    b.author AS author,
+                    b.format AS format_name,
                     c.chunk_no AS chunk_no,
                     c.raw_text AS raw_text,
                     c.page AS page,
@@ -226,6 +235,9 @@ class SearchRepository:
                 chunk_id=int(row["chunk_id"]),
                 book_id=int(row["book_id"]),
                 source_path=row["source_path"],
+                title=row["title"],
+                author=row["author"],
+                format_name=row["format_name"],
                 chunk_no=int(row["chunk_no"]),
                 raw_text=row["raw_text"],
                 page=row["page"],
@@ -248,6 +260,9 @@ class SearchRepository:
                 c.id AS chunk_id,
                 c.book_id AS book_id,
                 b.source_path AS source_path,
+                b.title AS title,
+                b.author AS author,
+                b.format AS format_name,
                 c.chunk_no AS chunk_no,
                 c.raw_text AS raw_text,
                 c.page AS page,
@@ -268,6 +283,9 @@ class SearchRepository:
                 chunk_id=int(row["chunk_id"]),
                 book_id=int(row["book_id"]),
                 source_path=row["source_path"],
+                title=row["title"],
+                author=row["author"],
+                format_name=row["format_name"],
                 chunk_no=int(row["chunk_no"]),
                 raw_text=row["raw_text"],
                 page=row["page"],
