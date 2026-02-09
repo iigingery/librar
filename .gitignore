@@ -1,1 +1,33 @@
 .planning/
+
+# Secrets and local env files
+.env
+.env.*
+!.env.example
+
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+.venv_task1/
+
+# Local runtime artifacts
+*.db
+*.db-shm
+*.db-wal
+*.faiss
+*.log
+.librar-ingestion-cache.json
+.uat-phase1-cache.json
+.phase2-*.db
+nul
+
+# Local content
+books/
+тестовые_книги/
