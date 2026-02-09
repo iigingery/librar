@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from pathlib import Path
 import sys
 
 from dotenv import load_dotenv
@@ -12,6 +14,8 @@ from telegram.ext import Application
 load_dotenv()
 
 from librar.bot.config import BotSettings
+from librar.automation.ingestion_service import run_ingestion_pipeline
+from librar.automation.watcher import BookFolderWatcher
 from librar.bot.handlers.callbacks import build_callback_handlers
 from librar.bot.handlers.commands import build_command_handlers
 from librar.bot.handlers.inline import build_inline_handler
@@ -69,6 +73,7 @@ def build_application(settings: BotSettings) -> Application:
 async def run_bot(settings: BotSettings) -> None:
     """Run bot with polling and graceful shutdown."""
     application = build_application(settings)
+    watcher: BookFolderWatcher | None = None
 
     # Initialize application
     await application.initialize()
@@ -76,9 +81,43 @@ async def run_bot(settings: BotSettings) -> None:
 
     # Start polling with explicit allowed updates
     await application.start()
-    await application.updater.start_polling(
+    updater = application.updater
+    if updater is None:
+        raise RuntimeError("Bot updater is not initialized")
+
+    await updater.start_polling(
         allowed_updates=["message", "inline_query", "callback_query"]
     )
+
+    watch_dir = Path(os.environ.get("LIBRAR_WATCH_DIR", "books"))
+
+    async def _on_new_book(file_path: Path) -> None:
+        logger.info("Watcher detected new book: %s", file_path)
+        result = await run_ingestion_pipeline(
+            file_path,
+            db_path=str(settings.db_path),
+            index_path=str(settings.index_path),
+            cache_file=".librar-ingestion-cache.json",
+        )
+        if result.is_duplicate:
+            logger.info("Skipped duplicate from watcher: %s", file_path.name)
+            return
+        if result.success:
+            logger.info(
+                "Ingested from watcher: %s by %s (%s chunks)",
+                result.title,
+                result.author,
+                result.chunk_count,
+            )
+            return
+        logger.error("Watcher ingestion failed for %s: %s", file_path.name, result.error)
+
+    if watch_dir.exists() and watch_dir.is_dir():
+        watcher = BookFolderWatcher(watch_dir=watch_dir, callback=_on_new_book)
+        await watcher.start()
+        logger.info("Folder watcher started for %s", watch_dir)
+    else:
+        logger.warning("Watch directory does not exist, watcher disabled: %s", watch_dir)
 
     logger.info("Bot polling started. Press Ctrl+C to stop.")
 
@@ -90,7 +129,15 @@ async def run_bot(settings: BotSettings) -> None:
         logger.info("Received stop signal. Shutting down...")
 
     # Graceful shutdown
-    await application.updater.stop()
+    await updater.stop()
+
+    if watcher is not None:
+        try:
+            watcher.stop()
+            logger.info("Folder watcher stopped cleanly.")
+        except Exception:
+            logger.exception("Failed to stop folder watcher cleanly")
+
     await application.stop()
     await application.shutdown()
 
