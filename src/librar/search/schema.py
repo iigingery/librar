@@ -81,6 +81,12 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id INTEGER PRIMARY KEY,
+            excerpt_size INTEGER NOT NULL DEFAULT 200 CHECK(excerpt_size BETWEEN 50 AND 500),
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_chunks_book_id ON chunks(book_id);
         CREATE INDEX IF NOT EXISTS idx_index_state_book_id ON index_state(book_id);
         CREATE INDEX IF NOT EXISTS idx_semantic_chunk_state_model ON semantic_chunk_state(model);
