@@ -7,6 +7,10 @@ import json
 import time
 from typing import Sequence
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from librar.semantic.query import SemanticQueryService
 
 

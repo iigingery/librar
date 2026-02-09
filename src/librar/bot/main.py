@@ -6,7 +6,10 @@ import asyncio
 import logging
 import sys
 
+from dotenv import load_dotenv
 from telegram.ext import Application
+
+load_dotenv()
 
 from librar.bot.config import BotSettings
 from librar.bot.handlers.callbacks import build_callback_handlers

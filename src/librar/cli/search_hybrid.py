@@ -5,6 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from librar.hybrid.query import HybridQueryService
 
 
