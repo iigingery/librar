@@ -16,6 +16,7 @@ from librar.bot.handlers.callbacks import build_callback_handlers
 from librar.bot.handlers.commands import build_command_handlers
 from librar.bot.handlers.inline import build_inline_handler
 from librar.bot.handlers.settings import build_settings_conversation_handler
+from librar.bot.handlers.upload import build_upload_handler
 from librar.bot.repository import BotRepository
 
 
@@ -54,11 +55,14 @@ def build_application(settings: BotSettings) -> Application:
     # 3. Inline query handler (@botname queries)
     application.add_handler(build_inline_handler())
 
-    # 4. Callback query handlers (pagination)
+    # 4. Document upload handler (book file uploads)
+    application.add_handler(build_upload_handler())
+
+    # 5. Callback query handlers (pagination)
     for handler in build_callback_handlers():
         application.add_handler(handler)
 
-    logger.info("Registered all handlers: commands, inline, callbacks, settings")
+    logger.info("Registered all handlers: settings, commands, inline, upload, callbacks")
     return application
 
 
