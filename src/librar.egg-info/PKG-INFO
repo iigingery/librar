@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: librar
+Version: 0.1.0
+Summary: Local-first book ingestion and search foundations
+Requires-Python: >=3.11
+Requires-Dist: pymupdf==1.26.7
+Requires-Dist: EbookLib==0.20
+Requires-Dist: lxml==6.0.2
+Requires-Dist: beautifulsoup4==4.14.3
+Requires-Dist: charset-normalizer==3.4.4
+Requires-Dist: faiss-cpu==1.13.0
+Requires-Dist: numpy==1.26.4
+Requires-Dist: openai==1.47.1
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: python-telegram-bot==22.6
+Requires-Dist: pymorphy2==0.9.1
+Requires-Dist: pymorphy2-dicts-ru==2.4.417127.4579844
+Requires-Dist: razdel==0.5.0
+Requires-Dist: watchdog>=4.0.0
