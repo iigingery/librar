@@ -576,3 +576,105 @@ def test_srch06_output_contract_fields_match_to_dict(tmp_path: Path) -> None:
     # Verify display field is ready for rendering
     assert isinstance(result_dict["display"], str)
     assert len(result_dict["display"]) > 0
+
+
+def test_srch04_handles_long_human_question_with_entity_focused_rewrite(tmp_path: Path) -> None:
+    """SRCH-04: Long natural-language question is rewritten and still retrieves relevant chunks."""
+    db_path = tmp_path / "hybrid.db"
+
+    with SearchRepository(db_path) as repo:
+        relevant_id = _seed_chunk(
+            repo,
+            source_path=r"books\attention.fb2",
+            title="Практика внимания",
+            author="Автор A",
+            format_name="fb2",
+            raw_text="Практика внимания и наблюдение за мыслями в повседневности",
+            lemma_text="практика внимание и наблюдение за мысль в повседневность",
+            page=9,
+        )
+        _seed_chunk(
+            repo,
+            source_path=r"books\other.fb2",
+            title="Другая тема",
+            author="Автор B",
+            format_name="fb2",
+            raw_text="Описание исторических событий без практических инструкций",
+            lemma_text="описание исторический событие без практический инструкция",
+            page=3,
+        )
+
+        semantic = _SemanticStub(hits=[])
+        service = HybridQueryService(search_repository=repo, semantic_searcher=semantic)
+        results = service.search(
+            query=(
+                "Здравствуйте, подскажите пожалуйста, я читаю книгу и хочу понять, "
+                "где автор подробно объясняет практику внимания, наблюдение за мыслями "
+                "и развитие устойчивости в обычной повседневной жизни"
+            ),
+            limit=5,
+            alpha=0.7,
+        )
+
+    assert results, "Expected at least one hit for long question"
+    assert results[0].chunk_id == relevant_id
+
+
+def test_srch04_long_human_question_rerank_keeps_most_relevant_first(tmp_path: Path) -> None:
+    """SRCH-04: Rerank stage prioritizes chunk with best alignment to long user question."""
+    db_path = tmp_path / "hybrid.db"
+
+    with SearchRepository(db_path) as repo:
+        relevant_id = _seed_chunk(
+            repo,
+            source_path=r"books\relevant.fb2",
+            title="Релевантный текст",
+            author="Автор",
+            format_name="fb2",
+            raw_text="Практика внимания, наблюдение за мыслями и внутренняя тишина",
+            lemma_text="практика внимание наблюдение за мысль и внутренний тишина",
+            page=5,
+        )
+        weaker_id = _seed_chunk(
+            repo,
+            source_path=r"books\weaker.fb2",
+            title="Слабое совпадение",
+            author="Автор",
+            format_name="fb2",
+            raw_text="Размышления о погоде и природе",
+            lemma_text="размышление о погода и природа",
+            page=6,
+        )
+
+        semantic = _SemanticStub(
+            hits=[
+                SemanticSearchHit(
+                    source_path=r"books\weaker.fb2",
+                    title="Слабое совпадение",
+                    author="Автор",
+                    format_name="fb2",
+                    chunk_id=weaker_id,
+                    chunk_no=0,
+                    page=6,
+                    chapter=None,
+                    item_id=None,
+                    char_start=0,
+                    char_end=30,
+                    score=0.98,
+                    excerpt="Размышления о погоде и природе",
+                )
+            ]
+        )
+
+        service = HybridQueryService(search_repository=repo, semantic_searcher=semantic)
+        results = service.search(
+            query=(
+                "Можете помочь найти в тексте место, где разбирается практика внимания, "
+                "наблюдение за мыслями и развитие внутренней тишины в ежедневной практике?"
+            ),
+            limit=5,
+            alpha=0.2,
+        )
+
+    assert len(results) >= 2
+    assert results[0].chunk_id == relevant_id

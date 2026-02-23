@@ -165,3 +165,93 @@ def test_hybrid_propagates_filters_to_both_branches(tmp_path: Path) -> None:
     assert semantic_stub.last_kwargs is not None
     assert semantic_stub.last_kwargs["author_filter"] == "mahar"
     assert semantic_stub.last_kwargs["format_filter"] == "fb2"
+
+
+def test_hybrid_rewrites_long_human_question_for_semantic_branch(tmp_path: Path) -> None:
+    db_path = tmp_path / "hybrid.db"
+
+    with SearchRepository(db_path) as repo:
+        _insert_single_chunk(
+            repo,
+            source_path=r"books\focus.fb2",
+            title="Практика внимания",
+            author="Author",
+            format_name="fb2",
+            raw_text="практика внимания и наблюдение за умом",
+            lemma_text="практика внимание и наблюдение за ум",
+        )
+
+        semantic_stub = _StubSemanticSearcher(hits=[])
+        service = HybridQueryService(search_repository=repo, semantic_searcher=semantic_stub)
+        service.search(
+            query=(
+                "Здравствуйте, подскажите пожалуйста, я давно пытаюсь понять, "
+                "как именно в книге описана практика устойчивого внимания, "
+                "наблюдения за мыслями и работы с внутренним диалогом в повседневности"
+            ),
+            limit=5,
+            alpha=0.7,
+        )
+
+    assert semantic_stub.last_kwargs is not None
+    rewritten_query = str(semantic_stub.last_kwargs["query"])
+    assert len(rewritten_query) < 120
+    assert "практ" in rewritten_query
+    assert "внимания" in rewritten_query
+
+
+def test_hybrid_reranks_by_question_alignment_for_long_query(tmp_path: Path) -> None:
+    db_path = tmp_path / "hybrid.db"
+
+    with SearchRepository(db_path) as repo:
+        relevant_id = _insert_single_chunk(
+            repo,
+            source_path=r"books\relevant.fb2",
+            title="Внимание и тишина",
+            author="Author",
+            format_name="fb2",
+            raw_text="практика внимания и наблюдение за мыслями",
+            lemma_text="практика внимание и наблюдение за мысль",
+        )
+        weak_id = _insert_single_chunk(
+            repo,
+            source_path=r"books\weak.fb2",
+            title="Отвлеченные заметки",
+            author="Author",
+            format_name="fb2",
+            raw_text="общие размышления о жизни и природе",
+            lemma_text="общий размышление о жизнь и природа",
+        )
+
+        semantic_stub = _StubSemanticSearcher(
+            hits=[
+                SemanticSearchHit(
+                    source_path=r"books\weak.fb2",
+                    title="Отвлеченные заметки",
+                    author="Author",
+                    format_name="fb2",
+                    chunk_id=weak_id,
+                    chunk_no=0,
+                    page=1,
+                    chapter="ch-1",
+                    item_id=None,
+                    char_start=0,
+                    char_end=35,
+                    score=0.99,
+                    excerpt="общие размышления о жизни и природе",
+                )
+            ]
+        )
+
+        service = HybridQueryService(search_repository=repo, semantic_searcher=semantic_stub)
+        results = service.search(
+            query=(
+                "Я ищу в книге конкретные рекомендации про практику внимания, "
+                "наблюдение за мыслями и развитие внутренней тишины в повседневной жизни"
+            ),
+            limit=5,
+            alpha=0.2,
+        )
+
+    assert len(results) >= 2
+    assert results[0].chunk_id == relevant_id
