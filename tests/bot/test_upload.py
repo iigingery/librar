@@ -73,13 +73,13 @@ async def test_upload_success_flow_shows_book_details(monkeypatch: pytest.Monkey
     await handle_book_upload(update, context)
 
     assert message.reply_text.await_count == 1
-    message.reply_text.assert_awaited_with("Загружаю и обрабатываю книгу...")
+    message.reply_text.assert_awaited_with("Готовлю загрузку книги...")
     document.get_file.assert_awaited_once()
     telegram_file.download_to_drive.assert_awaited_once()
     assert downloaded_to == [Path("books") / "book.epub"]
 
-    status_message.edit_text.assert_awaited_once()
-    sent_text = status_message.edit_text.await_args.args[0]
+    assert status_message.edit_text.await_count == 3
+    sent_text = status_message.edit_text.await_args_list[-1].args[0]
     assert "Книга добавлена!" in sent_text
     assert "Название: Тестовая книга" in sent_text
     assert "Автор: Автор" in sent_text
@@ -108,7 +108,7 @@ async def test_upload_duplicate_book_message(monkeypatch: pytest.MonkeyPatch) ->
 
     await handle_book_upload(update, context)
 
-    status_message.edit_text.assert_awaited_once_with("Эта книга уже есть в библиотеке.")
+    assert status_message.edit_text.await_args_list[-1].args[0] == "Эта книга уже есть в библиотеке."
 
 
 @pytest.mark.asyncio
@@ -143,7 +143,7 @@ async def test_upload_duplicate_book_removes_downloaded_file(monkeypatch: pytest
 
     saved_path = books_path / "dup.pdf"
     assert not saved_path.exists()
-    status_message.edit_text.assert_awaited_once_with("Эта книга уже есть в библиотеке.")
+    assert status_message.edit_text.await_args_list[-1].args[0] == "Эта книга уже есть в библиотеке."
 
 
 @pytest.mark.asyncio
@@ -168,8 +168,35 @@ async def test_upload_ingestion_failure_shows_error(monkeypatch: pytest.MonkeyPa
 
     await handle_book_upload(update, context)
 
-    status_message.edit_text.assert_awaited_once_with("Ошибка обработки: pipeline failed")
+    status_message.edit_text.assert_awaited_with("Ошибка на этапе «добавление книги»: pipeline failed")
 
+
+
+
+@pytest.mark.asyncio
+async def test_upload_failure_shows_readable_stage_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    telegram_file = SimpleNamespace(download_to_drive=AsyncMock())
+    document = SimpleNamespace(file_size=2000, file_name="bad.epub", get_file=AsyncMock(return_value=telegram_file))
+    update, context, _, status_message = _build_update_context(document)
+
+    async def fake_pipeline(file_path: Path, **kwargs: Any) -> IngestionPipelineResult:
+        del file_path, kwargs
+        return IngestionPipelineResult(
+            success=False,
+            title=None,
+            author=None,
+            format_name=None,
+            chunk_count=0,
+            is_duplicate=False,
+            stage="index_semantic",
+            error="faiss failed",
+        )
+
+    monkeypatch.setattr("librar.bot.handlers.upload.run_ingestion_pipeline", fake_pipeline)
+
+    await handle_book_upload(update, context)
+
+    status_message.edit_text.assert_awaited_with("Ошибка на этапе «построение поиска»: faiss failed")
 
 @pytest.mark.asyncio
 async def test_upload_allows_none_file_size(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -194,4 +221,4 @@ async def test_upload_allows_none_file_size(monkeypatch: pytest.MonkeyPatch) -> 
     await handle_book_upload(update, context)
 
     document.get_file.assert_awaited_once()
-    status_message.edit_text.assert_awaited_once()
+    assert status_message.edit_text.await_count == 3

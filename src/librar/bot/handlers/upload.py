@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {".pdf", ".epub", ".fb2", ".txt"}
+STAGE_LABELS = {
+    "ingest": "добавление книги",
+    "index_metadata": "обновление каталога",
+    "index_semantic": "построение поиска",
+}
 
 
 def _safe_remove_file(file_path: Path) -> None:
@@ -46,6 +51,12 @@ def _build_unique_target_path(base_path: Path) -> Path:
         index += 1
 
 
+def _build_stage_error_message(stage: str, error: str | None) -> str:
+    stage_label = STAGE_LABELS.get(stage, "обработка")
+    error_text = error or "Неизвестная ошибка"
+    return f"Ошибка на этапе «{stage_label}»: {error_text}"
+
+
 async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Validate, download, and ingest a user-uploaded document."""
     message = update.message
@@ -64,7 +75,7 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await message.reply_text("Неподдерживаемый формат. Поддерживаются: PDF, EPUB, FB2, TXT")
         return
 
-    status_msg = await message.reply_text("Загружаю и обрабатываю книгу...")
+    status_msg = await message.reply_text("Готовлю загрузку книги...")
     books_path = Path(str(context.bot_data.get("books_path", "books")))
     target_path = _build_unique_target_path(books_path / safe_name)
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,9 +87,11 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if attempt == 1:
                 logger.warning("Retrying upload download after transient network failure: %s", safe_name)
 
+            await status_msg.edit_text("Этап 1/2: загружаю файл...")
             telegram_file = await document.get_file()
             await telegram_file.download_to_drive(target_path)
 
+            await status_msg.edit_text("Этап 2/2: обрабатываю и индексирую книгу...")
             result = await run_ingestion_pipeline(
                 target_path,
                 db_path=str(context.bot_data["db_path"]),
@@ -108,7 +121,7 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 )
                 return
 
-            await status_msg.edit_text(f"Ошибка обработки: {result.error or 'Неизвестная ошибка'}")
+            await status_msg.edit_text(_build_stage_error_message(result.stage, result.error))
             return
         except (NetworkError, TimedOut) as error:
             logger.warning("Network error during upload handling (attempt %s/2): %s", attempt + 1, error)

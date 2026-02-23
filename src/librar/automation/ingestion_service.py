@@ -20,7 +20,8 @@ class IngestionPipelineResult:
     format_name: str | None
     chunk_count: int
     is_duplicate: bool
-    error: str | None
+    stage: str = "unknown"
+    error: str | None = None
 
 
 async def _run_cli_command(
@@ -62,6 +63,7 @@ def _parse_ingest_payload(stdout_text: str) -> IngestionPipelineResult:
             format_name=None,
             chunk_count=0,
             is_duplicate=False,
+            stage="ingest",
             error="ingest_books returned malformed JSON",
         )
 
@@ -73,6 +75,7 @@ def _parse_ingest_payload(stdout_text: str) -> IngestionPipelineResult:
             format_name=None,
             chunk_count=0,
             is_duplicate=False,
+            stage="ingest",
             error="ingest_books payload is not an object",
         )
 
@@ -90,6 +93,7 @@ def _parse_ingest_payload(stdout_text: str) -> IngestionPipelineResult:
             format_name=None,
             chunk_count=0,
             is_duplicate=False,
+            stage="ingest",
             error=error_text,
         )
 
@@ -102,6 +106,7 @@ def _parse_ingest_payload(stdout_text: str) -> IngestionPipelineResult:
             format_name=None,
             chunk_count=0,
             is_duplicate=False,
+            stage="ingest",
             error="No ingestion result returned for file",
         )
 
@@ -114,6 +119,7 @@ def _parse_ingest_payload(stdout_text: str) -> IngestionPipelineResult:
             format_name=None,
             chunk_count=0,
             is_duplicate=False,
+            stage="ingest",
             error="ingest_books result entry is invalid",
         )
 
@@ -124,7 +130,7 @@ def _parse_ingest_payload(stdout_text: str) -> IngestionPipelineResult:
         format_name=str(first.get("format")) if first.get("format") is not None else None,
         chunk_count=int(first.get("chunk_count") or 0),
         is_duplicate=bool(first.get("is_duplicate", False)),
-        error=None,
+        stage="ingest",
     )
 
 
@@ -152,6 +158,7 @@ async def run_ingestion_pipeline(
             format_name=None,
             chunk_count=0,
             is_duplicate=False,
+            stage="ingest",
             error=ingest_error,
         )
 
@@ -178,6 +185,7 @@ async def run_ingestion_pipeline(
             format_name=result.format_name,
             chunk_count=result.chunk_count,
             is_duplicate=False,
+            stage="index_metadata",
             error=index_error,
         )
 
@@ -197,7 +205,16 @@ async def run_ingestion_pipeline(
             format_name=result.format_name,
             chunk_count=result.chunk_count,
             is_duplicate=False,
+            stage="index_semantic",
             error=semantic_error,
         )
 
-    return result
+    return IngestionPipelineResult(
+        success=result.success,
+        title=result.title,
+        author=result.author,
+        format_name=result.format_name,
+        chunk_count=result.chunk_count,
+        is_duplicate=result.is_duplicate,
+        stage="done",
+    )
