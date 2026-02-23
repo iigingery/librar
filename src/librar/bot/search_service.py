@@ -16,6 +16,9 @@ from librar.semantic.openrouter import OpenRouterGenerator
 DEFAULT_SEARCH_TIMEOUT_SECONDS = 25.0
 DEFAULT_GENERATION_TEMPERATURE = 0.2
 DEFAULT_GENERATION_MAX_TOKENS = 350
+DEFAULT_MIN_RELEVANT_CHUNKS = 2
+DEFAULT_MIN_TOTAL_RELEVANCE = 0.7
+INSUFFICIENT_DATA_ANSWER = "В библиотеке нет достаточных данных по вопросу. Пожалуйста, переформулируйте запрос."
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +159,7 @@ def _build_prompt(*, query: str, results: tuple[SearchResult, ...], max_context_
     context_block = "\n\n".join(fragments)
     return (
         "Системная инструкция:\n"
-        "Ты помощник библиотечного бота. Отвечай только на основе контекста ниже. "
+        "Ты помощник библиотечного бота. Отвечай только на основе контекста ниже и никогда не используй внешние знания. "
         "Если контекста недостаточно, прямо напиши: 'Недостаточно данных в источниках'. "
         "Каждое утверждение подтверждай ссылками на фрагменты в формате [n].\n\n"
         f"Вопрос пользователя: {query}\n\n"
@@ -184,11 +187,30 @@ def _build_sources(results: tuple[SearchResult, ...]) -> tuple[AnswerSource, ...
     return tuple(sources)
 
 
+
+def _has_sufficient_relevance(
+    results: tuple[SearchResult, ...],
+    *,
+    min_chunks: int = DEFAULT_MIN_RELEVANT_CHUNKS,
+    min_total_relevance: float = DEFAULT_MIN_TOTAL_RELEVANCE,
+) -> bool:
+    if min_chunks < 1:
+        raise ValueError("min_chunks must be positive")
+    if min_total_relevance < 0.0:
+        raise ValueError("min_total_relevance cannot be negative")
+
+    scored = tuple(result for result in results if result.hybrid_score is not None)
+    if len(scored) < min_chunks:
+        return False
+
+    total = sum(float(result.hybrid_score or 0.0) for result in scored[:min_chunks])
+    return total >= min_total_relevance
+
 def _fallback_answer(*, prompt: str, results: tuple[SearchResult, ...]) -> AnswerResult:
     sources = _build_sources(results)
     if not sources:
         return AnswerResult(
-            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            answer=INSUFFICIENT_DATA_ANSWER,
             sources=(),
             is_confirmed=False,
             prompt=prompt,
@@ -196,7 +218,7 @@ def _fallback_answer(*, prompt: str, results: tuple[SearchResult, ...]) -> Answe
     lead_excerpt = results[0].excerpt.strip()
     if not lead_excerpt:
         return AnswerResult(
-            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            answer=INSUFFICIENT_DATA_ANSWER,
             sources=sources,
             is_confirmed=False,
             prompt=prompt,
@@ -226,13 +248,21 @@ async def answer_question(
     )
     if response.error or not response.results:
         return AnswerResult(
-            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            answer=INSUFFICIENT_DATA_ANSWER,
             sources=(),
             is_confirmed=False,
             prompt="",
         )
 
     selected = response.results[:top_k]
+    if not _has_sufficient_relevance(selected):
+        return AnswerResult(
+            answer=INSUFFICIENT_DATA_ANSWER,
+            sources=(),
+            is_confirmed=False,
+            prompt="",
+        )
+
     prompt = _build_prompt(query=query, results=selected, max_context_chars=max_context_chars)
     semantic_settings = SemanticSettings.from_env()
     rag_generator = generator or OpenRouterGenerator(semantic_settings)
@@ -250,7 +280,7 @@ async def answer_question(
     sources = _build_sources(selected)
     if not sources:
         return AnswerResult(
-            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            answer=INSUFFICIENT_DATA_ANSWER,
             sources=(),
             is_confirmed=False,
             prompt=prompt,

@@ -7,6 +7,7 @@ from librar.hybrid.scoring import (
     normalize_keyword_ranks,
     normalize_semantic_scores,
     order_fused_scores,
+    filter_relevant_scores,
 )
 
 
@@ -56,3 +57,14 @@ def test_ordering_is_deterministic_on_equal_scores() -> None:
 def test_invalid_alpha_is_rejected() -> None:
     with pytest.raises(ValueError, match="alpha"):
         fuse_normalized_scores({1: 1.0}, {1: 1.0}, alpha=1.2)
+
+
+def test_filter_relevant_scores_drops_low_values() -> None:
+    filtered = filter_relevant_scores({1: 0.1, 2: 0.2, 3: 0.9}, min_score=0.2)
+
+    assert filtered == {2: 0.2, 3: 0.9}
+
+
+def test_filter_relevant_scores_rejects_negative_threshold() -> None:
+    with pytest.raises(ValueError, match="min_score"):
+        filter_relevant_scores({1: 0.3}, min_score=-0.01)

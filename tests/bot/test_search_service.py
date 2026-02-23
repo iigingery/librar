@@ -5,7 +5,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from librar.bot.search_service import SearchResult, answer_question, search_hybrid_cli
+from librar.bot.search_service import INSUFFICIENT_DATA_ANSWER, SearchResult, answer_question, search_hybrid_cli
 
 
 class _DummyProc:
@@ -119,6 +119,7 @@ def test_answer_question_uses_top_k_and_generation(monkeypatch) -> None:
             title=f"Книга {i}",
             author=f"Автор {i}",
             page=i + 1,
+            hybrid_score=0.8 - i * 0.05,
         )
         for i in range(4)
     )
@@ -166,6 +167,18 @@ def test_answer_question_falls_back_when_generation_fails(monkeypatch) -> None:
             title="Тестовая книга",
             author="Иван Иванов",
             page=12,
+            hybrid_score=0.8,
+        ),
+        SearchResult(
+            source_path="books/book.pdf",
+            chunk_id=2,
+            chunk_no=5,
+            display="Book",
+            excerpt="Дополнительный подтверждающий фрагмент.",
+            title="Тестовая книга",
+            author="Иван Иванов",
+            page=13,
+            hybrid_score=0.75,
         ),
     )
 
@@ -194,3 +207,90 @@ def test_answer_question_falls_back_when_generation_fails(monkeypatch) -> None:
     assert result.is_confirmed is True
     assert "Иван Иванов" in result.answer
     assert result.sources[0].location == "стр. 12"
+
+
+def test_answer_question_returns_template_when_relevance_is_insufficient(monkeypatch) -> None:
+    search_results = (
+        SearchResult(
+            source_path="books/book.pdf",
+            chunk_id=1,
+            chunk_no=0,
+            display="Book",
+            excerpt="Нерелевантный отрывок.",
+            title="Тестовая книга",
+            author="Автор",
+            page=1,
+            hybrid_score=0.15,
+        ),
+        SearchResult(
+            source_path="books/book.pdf",
+            chunk_id=2,
+            chunk_no=1,
+            display="Book",
+            excerpt="Ещё один нерелевантный отрывок.",
+            title="Тестовая книга",
+            author="Автор",
+            page=2,
+            hybrid_score=0.2,
+        ),
+    )
+
+    async def _fake_search_hybrid_cli(**kwargs: Any):
+        del kwargs
+        return SimpleNamespace(results=search_results, error=None, timed_out=False)
+
+    monkeypatch.setattr("librar.bot.search_service.search_hybrid_cli", _fake_search_hybrid_cli)
+
+    result = asyncio.run(
+        answer_question(
+            query="Сложный вопрос",
+            db_path=".librar-search.db",
+            index_path=".librar-semantic.faiss",
+            top_k=2,
+            max_context_chars=500,
+            chat_model="openai/gpt-4o-mini",
+            generator=_DummyGenerator(),
+        )
+    )
+
+    assert result.is_confirmed is False
+    assert result.sources == ()
+    assert result.answer == INSUFFICIENT_DATA_ANSWER
+
+
+def test_answer_question_returns_template_when_too_few_scored_chunks(monkeypatch) -> None:
+    search_results = (
+        SearchResult(
+            source_path="books/book.pdf",
+            chunk_id=1,
+            chunk_no=0,
+            display="Book",
+            excerpt="Один фрагмент.",
+            title="Тестовая книга",
+            author="Автор",
+            page=1,
+            hybrid_score=0.95,
+        ),
+    )
+
+    async def _fake_search_hybrid_cli(**kwargs: Any):
+        del kwargs
+        return SimpleNamespace(results=search_results, error=None, timed_out=False)
+
+    monkeypatch.setattr("librar.bot.search_service.search_hybrid_cli", _fake_search_hybrid_cli)
+
+    result = asyncio.run(
+        answer_question(
+            query="Сложный вопрос",
+            db_path=".librar-search.db",
+            index_path=".librar-semantic.faiss",
+            top_k=2,
+            max_context_chars=500,
+            chat_model="openai/gpt-4o-mini",
+            generator=_DummyGenerator(),
+        )
+    )
+
+    assert result.is_confirmed is False
+    assert result.sources == ()
+    assert result.answer == INSUFFICIENT_DATA_ANSWER
