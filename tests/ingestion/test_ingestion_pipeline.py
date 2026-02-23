@@ -111,6 +111,22 @@ def test_cli_reports_duplicate_on_repeated_run(tmp_path: Path, capsys: object) -
     assert payload_second["results"][0]["duplicate_reason"] in {"binary-match", "normalized-content-match"}
 
 
+def test_cli_ignores_invalid_cache_and_continues_ingestion(tmp_path: Path, capsys: object, caplog: object) -> None:
+    source = tmp_path / "book.txt"
+    source.write_text("Title: Corrupted cache\n\nCLI should continue.", encoding="utf-8")
+    cache = tmp_path / "ingest-cache.json"
+    cache.write_text("{invalid-json", encoding="utf-8")
+
+    exit_code = ingest_cli_main(["--path", str(source), "--cache-file", str(cache)])
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["processed"] == 1
+    assert payload["results"][0]["is_duplicate"] is False
+    assert "Failed to load ingestion cache" in caplog.text
+
+
 def test_ingestor_outputs_sentence_safe_chunks_for_multi_block_epub(tmp_path: Path) -> None:
     epub_path = tmp_path / "sentence-safe.epub"
     _build_epub(epub_path)

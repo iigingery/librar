@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 from librar.ingestion.adapters import build_default_adapters
@@ -11,6 +12,7 @@ from librar.ingestion.dedupe import FingerprintRegistry
 from librar.ingestion.ingestor import DocumentIngestor, IngestionError
 
 _SUPPORTED_SUFFIXES = {".pdf", ".epub", ".fb2", ".fbz", ".txt"}
+LOGGER = logging.getLogger(__name__)
 
 
 def _is_supported(path: Path) -> bool:
@@ -31,16 +33,23 @@ def _collect_inputs(target: Path) -> list[Path]:
 
 
 def _load_registry(cache_path: Path) -> FingerprintRegistry:
-    registry = FingerprintRegistry()
     if not cache_path.exists():
-        return registry
+        return FingerprintRegistry()
 
-    data = json.loads(cache_path.read_text(encoding="utf-8"))
-    registry.seed(
-        binary_hashes=set(data.get("binary_hashes", [])),
-        normalized_text_hashes=set(data.get("normalized_text_hashes", [])),
-    )
-    return registry
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("ingestion cache must be a JSON object")
+
+        registry = FingerprintRegistry()
+        registry.seed(
+            binary_hashes=set(data.get("binary_hashes", [])),
+            normalized_text_hashes=set(data.get("normalized_text_hashes", [])),
+        )
+        return registry
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        LOGGER.warning("Failed to load ingestion cache %s: %s", cache_path, exc)
+        return FingerprintRegistry()
 
 
 def _save_registry(cache_path: Path, registry: FingerprintRegistry) -> None:
