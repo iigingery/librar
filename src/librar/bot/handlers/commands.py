@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes
 
-from librar.bot.repository import BotRepository, DEFAULT_DIALOG_HISTORY_LIMIT
+from librar.bot.handlers.config import ConfigError, resolve_repository, resolve_required
+from librar.bot.repository import DEFAULT_DIALOG_HISTORY_LIMIT
 from librar.bot.search_service import AnswerSource, answer_question, search_hybrid_cli
+
+logger = logging.getLogger(__name__)
 
 
 def _format_answer_message(answer_text: str, sources: tuple[AnswerSource, ...], *, confirmed: bool) -> str:
@@ -21,64 +26,6 @@ def _format_answer_message(answer_text: str, sources: tuple[AnswerSource, ...], 
             f"{idx}. {source.title} — {source.author}; {source.source_path}; {source.location}"
         )
     return "\n".join(lines)
-
-
-def _resolve_repository(context: ContextTypes.DEFAULT_TYPE) -> BotRepository:
-    repository = context.bot_data.get("repository")
-    if repository is None:
-        raise RuntimeError("Bot repository missing from context.bot_data['repository']")
-    if not isinstance(repository, BotRepository):
-        raise TypeError("context.bot_data['repository'] must be a BotRepository")
-    return repository
-
-
-def _resolve_db_path(context: ContextTypes.DEFAULT_TYPE) -> str:
-    db_path = context.bot_data.get("db_path")
-    if db_path is None:
-        raise RuntimeError("db_path missing from context.bot_data['db_path']")
-    return str(db_path)
-
-
-def _resolve_index_path(context: ContextTypes.DEFAULT_TYPE) -> str:
-    index_path = context.bot_data.get("index_path")
-    if index_path is None:
-        raise RuntimeError("index_path missing from context.bot_data['index_path']")
-    return str(index_path)
-
-
-def _resolve_page_size(context: ContextTypes.DEFAULT_TYPE) -> int:
-    page_size = context.bot_data.get("page_size")
-    if page_size is None:
-        raise RuntimeError("page_size missing from context.bot_data['page_size']")
-    return int(page_size)
-
-
-def _resolve_command_result_limit(context: ContextTypes.DEFAULT_TYPE) -> int:
-    limit = context.bot_data.get("command_result_limit")
-    if limit is None:
-        raise RuntimeError("command_result_limit missing from context.bot_data['command_result_limit']")
-    return int(limit)
-
-
-def _resolve_chat_model(context: ContextTypes.DEFAULT_TYPE) -> str:
-    model = context.bot_data.get("openrouter_chat_model")
-    if model is None:
-        raise RuntimeError("openrouter_chat_model missing from context.bot_data['openrouter_chat_model']")
-    return str(model)
-
-
-def _resolve_rag_top_k(context: ContextTypes.DEFAULT_TYPE) -> int:
-    top_k = context.bot_data.get("rag_top_k")
-    if top_k is None:
-        raise RuntimeError("rag_top_k missing from context.bot_data['rag_top_k']")
-    return int(top_k)
-
-
-def _resolve_rag_max_context_chars(context: ContextTypes.DEFAULT_TYPE) -> int:
-    max_chars = context.bot_data.get("rag_max_context_chars")
-    if max_chars is None:
-        raise RuntimeError("rag_max_context_chars missing from context.bot_data['rag_max_context_chars']")
-    return int(max_chars)
 
 
 def _resolve_chat_id(update: Update) -> int | None:
@@ -182,11 +129,16 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    repository = _resolve_repository(context)
-    db_path = _resolve_db_path(context)
-    index_path = _resolve_index_path(context)
-    limit = _resolve_command_result_limit(context)
-    page_size = _resolve_page_size(context)
+    try:
+        repository = resolve_repository(context)
+        db_path = str(resolve_required(context, "db_path"))
+        index_path = str(resolve_required(context, "index_path"))
+        limit = int(resolve_required(context, "command_result_limit"))
+        page_size = int(resolve_required(context, "page_size"))
+    except ConfigError as error:
+        logger.error("/search failed due to configuration error: %s", error)
+        await update.message.reply_text("Поиск временно недоступен. Попробуйте позже.")
+        return
 
     excerpt_size = repository.get_excerpt_size(int(user.id))
 
@@ -266,12 +218,17 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Не удалось определить чат или пользователя.")
         return
 
-    repository = _resolve_repository(context)
-    db_path = _resolve_db_path(context)
-    index_path = _resolve_index_path(context)
-    chat_model = _resolve_chat_model(context)
-    top_k = _resolve_rag_top_k(context)
-    max_context_chars = _resolve_rag_max_context_chars(context)
+    try:
+        repository = resolve_repository(context)
+        db_path = str(resolve_required(context, "db_path"))
+        index_path = str(resolve_required(context, "index_path"))
+        chat_model = str(resolve_required(context, "openrouter_chat_model"))
+        top_k = int(resolve_required(context, "rag_top_k"))
+        max_context_chars = int(resolve_required(context, "rag_max_context_chars"))
+    except ConfigError as error:
+        logger.error("/ask failed due to configuration error: %s", error)
+        await update.message.reply_text("Сервис ответов временно недоступен. Попробуйте позже.")
+        return
 
     history_rows = repository.get_dialog_history(
         chat_id=int(chat.id),
@@ -324,7 +281,13 @@ async def reset_context_command(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("Не удалось определить чат или пользователя.")
         return
 
-    repository = _resolve_repository(context)
+    try:
+        repository = resolve_repository(context)
+    except ConfigError as error:
+        logger.error("/reset_context failed due to configuration error: %s", error)
+        await update.message.reply_text("Не удалось очистить историю. Попробуйте позже.")
+        return
+
     removed = repository.clear_dialog_history(chat_id=int(chat.id), user_id=int(user.id))
     suffix = f" Удалено сообщений: {removed}." if removed else ""
     await update.message.reply_text(f"История диалога очищена.{suffix}")
@@ -340,8 +303,13 @@ async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("Не удалось определить чат.")
         return
 
-    repository = _resolve_repository(context)
-    page_size = _resolve_page_size(context)
+    try:
+        repository = resolve_repository(context)
+        page_size = int(resolve_required(context, "page_size"))
+    except ConfigError as error:
+        logger.error("/books failed due to configuration error: %s", error)
+        await update.message.reply_text("Список книг временно недоступен. Попробуйте позже.")
+        return
 
     book_page = repository.list_books(limit=page_size, offset=0)
 

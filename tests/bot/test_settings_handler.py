@@ -161,3 +161,34 @@ def test_build_settings_conversation_handler_registers_expected_states() -> None
     assert isinstance(handler, ConversationHandler)
     assert SETTINGS_SELECT in handler.states
     assert SETTINGS_ENTER_EXCERPT_SIZE in handler.states
+
+
+def test_settings_start_gracefully_handles_missing_repository() -> None:
+    message = DummyMessage()
+    update = SimpleNamespace(
+        message=message,
+        callback_query=None,
+        effective_user=SimpleNamespace(id=1),
+    )
+    context = SimpleNamespace(bot_data={})
+
+    state = asyncio.run(settings_start(update, context))
+
+    assert state == ConversationHandler.END
+    assert "временно недоступны" in message.replies[-1]["text"].lower()
+
+
+def test_settings_handlers_gracefully_handle_missing_update_payload() -> None:
+    context = SimpleNamespace(bot_data={})
+
+    choose_state = asyncio.run(
+        settings_choose_excerpt_size(SimpleNamespace(callback_query=None), context)
+    )
+    save_state = asyncio.run(
+        settings_save_excerpt_size(SimpleNamespace(message=None), context)
+    )
+    cancel_state = asyncio.run(settings_cancel(SimpleNamespace(message=None, callback_query=None), context))
+
+    assert choose_state == ConversationHandler.END
+    assert save_state == ConversationHandler.END
+    assert cancel_state == ConversationHandler.END
