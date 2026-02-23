@@ -6,7 +6,21 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes
 
 from librar.bot.repository import BotRepository
-from librar.bot.search_service import search_hybrid_cli
+from librar.bot.search_service import AnswerSource, answer_question, search_hybrid_cli
+
+
+def _format_answer_message(answer_text: str, sources: tuple[AnswerSource, ...], *, confirmed: bool) -> str:
+    status_line = "✅ Подтверждённый ответ" if confirmed else "⚠️ Недостаточно данных"
+    lines = [status_line, "", "Ответ", answer_text.strip() or "Недостаточно данных в источниках.", "", "Источники"]
+    if not sources:
+        lines.append("1. Источники не найдены")
+        return "\n".join(lines)
+
+    for idx, source in enumerate(sources, 1):
+        lines.append(
+            f"{idx}. {source.title} — {source.author}; {source.source_path}; {source.location}"
+        )
+    return "\n".join(lines)
 
 
 def _resolve_repository(context: ContextTypes.DEFAULT_TYPE) -> BotRepository:
@@ -132,10 +146,20 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"Ничего не найдено по запросу: {query}")
         return
 
+    answer_result = answer_question(query=query, results=response.results)
+
     # Store full results in user_data for pagination
     context.user_data["search_query"] = query
     context.user_data["search_results"] = response.results
     context.user_data["search_excerpt_size"] = excerpt_size
+    context.user_data["search_answer"] = answer_result
+
+    formatted_answer = _format_answer_message(
+        answer_result.answer,
+        answer_result.sources,
+        confirmed=answer_result.is_confirmed,
+    )
+    await update.message.reply_text(formatted_answer)
 
     # Render first page
     total = len(response.results)
