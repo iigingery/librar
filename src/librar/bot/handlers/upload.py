@@ -17,8 +17,25 @@ logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {".pdf", ".epub", ".fb2", ".txt"}
+
+
 def _is_supported_extension(file_name: str) -> bool:
     return Path(file_name).suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def _build_unique_target_path(base_path: Path) -> Path:
+    """Return a non-conflicting file path by appending a numeric suffix when needed."""
+    if not base_path.exists():
+        return base_path
+
+    stem = base_path.stem
+    suffix = base_path.suffix
+    index = 1
+    while True:
+        candidate = base_path.with_name(f"{stem}_{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+        index += 1
 
 
 async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -41,8 +58,10 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     status_msg = await message.reply_text("Загружаю и обрабатываю книгу...")
     books_path = Path(str(context.bot_data.get("books_path", "books")))
-    target_path = books_path / safe_name
+    target_path = _build_unique_target_path(books_path / safe_name)
     target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Accepted upload name mapping: original=%s stored=%s", safe_name, target_path.name)
 
     for attempt in range(2):
         try:
@@ -70,6 +89,7 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         [
                             "Книга добавлена!",
                             "",
+                            f"Файл: {target_path.name}",
                             f"Название: {result.title or 'Без названия'}",
                             f"Автор: {result.author or 'Неизвестный автор'}",
                             f"Формат: {result.format_name or '-'}",
