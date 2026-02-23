@@ -76,6 +76,12 @@ In BotFather, enable inline mode (`/setinline`) for your bot.
 python -m librar.cli.watch_folder --watch-dir books
 ```
 
+## Security
+
+- `.env.example` must contain **template placeholders only** and must never include real secrets/tokens.
+- Store real credentials only in local `.env` (which is git-ignored).
+- If any secret is exposed, rotate it immediately (Telegram BotFather/OpenRouter) and invalidate old tokens.
+
 ## Tests
 
 ```powershell
