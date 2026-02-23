@@ -19,6 +19,14 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {".pdf", ".epub", ".fb2", ".txt"}
 
 
+def _safe_remove_file(file_path: Path) -> None:
+    """Remove file if it exists without breaking user flow on filesystem errors."""
+    try:
+        file_path.unlink(missing_ok=True)
+    except OSError as error:
+        logger.warning("Could not remove uploaded duplicate file %s: %s", file_path, error)
+
+
 def _is_supported_extension(file_name: str) -> bool:
     return Path(file_name).suffix.lower() in SUPPORTED_EXTENSIONS
 
@@ -80,6 +88,7 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
 
             if result.is_duplicate:
+                _safe_remove_file(target_path)
                 await status_msg.edit_text("Эта книга уже есть в библиотеке.")
                 return
 
