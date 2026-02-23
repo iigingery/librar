@@ -7,7 +7,15 @@ import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes
 
-from librar.bot.handlers.config import ConfigError, resolve_repository, resolve_required
+from librar.bot.handlers.common import (
+    ConfigError,
+    _resolve_command_result_limit,
+    _resolve_db_path,
+    _resolve_index_path,
+    _resolve_page_size,
+    _resolve_repository,
+    _resolve_required,
+)
 from librar.bot.repository import DEFAULT_DIALOG_HISTORY_LIMIT
 from librar.bot.search_service import AnswerSource, answer_question, search_hybrid_cli
 
@@ -130,11 +138,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     try:
-        repository = resolve_repository(context)
-        db_path = str(resolve_required(context, "db_path"))
-        index_path = str(resolve_required(context, "index_path"))
-        limit = int(resolve_required(context, "command_result_limit"))
-        page_size = int(resolve_required(context, "page_size"))
+        repository = _resolve_repository(context)
+        db_path = _resolve_db_path(context)
+        index_path = _resolve_index_path(context)
+        limit = _resolve_command_result_limit(context)
+        page_size = _resolve_page_size(context)
     except ConfigError as error:
         logger.error("/search failed due to configuration error: %s", error)
         await update.message.reply_text("Поиск временно недоступен. Попробуйте позже.")
@@ -219,12 +227,12 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     try:
-        repository = resolve_repository(context)
-        db_path = str(resolve_required(context, "db_path"))
-        index_path = str(resolve_required(context, "index_path"))
-        chat_model = str(resolve_required(context, "openrouter_chat_model"))
-        top_k = int(resolve_required(context, "rag_top_k"))
-        max_context_chars = int(resolve_required(context, "rag_max_context_chars"))
+        repository = _resolve_repository(context)
+        db_path = _resolve_db_path(context)
+        index_path = _resolve_index_path(context)
+        chat_model = str(_resolve_required(context, "openrouter_chat_model"))
+        top_k = int(_resolve_required(context, "rag_top_k"))
+        max_context_chars = int(_resolve_required(context, "rag_max_context_chars"))
     except ConfigError as error:
         logger.error("/ask failed due to configuration error: %s", error)
         await update.message.reply_text("Сервис ответов временно недоступен. Попробуйте позже.")
@@ -282,7 +290,7 @@ async def reset_context_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     try:
-        repository = resolve_repository(context)
+        repository = _resolve_repository(context)
     except ConfigError as error:
         logger.error("/reset_context failed due to configuration error: %s", error)
         await update.message.reply_text("Не удалось очистить историю. Попробуйте позже.")
@@ -304,8 +312,8 @@ async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     try:
-        repository = resolve_repository(context)
-        page_size = int(resolve_required(context, "page_size"))
+        repository = _resolve_repository(context)
+        page_size = _resolve_page_size(context)
     except ConfigError as error:
         logger.error("/books failed due to configuration error: %s", error)
         await update.message.reply_text("Список книг временно недоступен. Попробуйте позже.")

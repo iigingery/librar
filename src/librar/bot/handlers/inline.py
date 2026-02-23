@@ -7,7 +7,14 @@ import logging
 from telegram import InlineQueryResultArticle, InputTextMessageContent, Update
 from telegram.ext import ContextTypes, InlineQueryHandler
 
-from librar.bot.handlers.config import ConfigError, resolve_repository, resolve_required
+from librar.bot.handlers.common import (
+    ConfigError,
+    _resolve_db_path,
+    _resolve_index_path,
+    _resolve_inline_result_limit,
+    _resolve_repository,
+    _resolve_required,
+)
 from librar.bot.search_service import search_hybrid_cli
 
 
@@ -30,11 +37,11 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     try:
-        repository = resolve_repository(context)
-        db_path = str(resolve_required(context, "db_path"))
-        index_path = str(resolve_required(context, "index_path"))
-        limit = int(resolve_required(context, "inline_result_limit"))
-        timeout = float(resolve_required(context, "inline_timeout_seconds"))
+        repository = _resolve_repository(context)
+        db_path = _resolve_db_path(context)
+        index_path = _resolve_index_path(context)
+        limit = _resolve_inline_result_limit(context)
+        timeout = float(_resolve_required(context, "inline_timeout_seconds"))
     except ConfigError as error:
         logger.error("Inline query failed due to configuration error: %s", error)
         error_article = InlineQueryResultArticle(
