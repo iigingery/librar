@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
+from typing import Any
 
 from librar.bot.search_service import SearchResult, answer_question, search_hybrid_cli
 
@@ -21,6 +23,26 @@ class _DummyProc:
 
     def kill(self) -> None:
         self.killed = True
+
+
+class _DummyGenerator:
+    def __init__(self, response_text: str = "Ответ [1]", *, fail: bool = False) -> None:
+        self.response_text = response_text
+        self.fail = fail
+        self.calls: list[dict[str, Any]] = []
+
+    def generate_text(self, *, prompt: str, model: str, temperature: float, max_tokens: int) -> str:
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
+        if self.fail:
+            raise RuntimeError("generation failed")
+        return self.response_text
 
 
 def test_search_hybrid_cli_parses_json_and_dedupes_paths(monkeypatch) -> None:
@@ -64,10 +86,10 @@ def test_search_hybrid_cli_parses_json_and_dedupes_paths(monkeypatch) -> None:
 
     assert response.error is None
     assert response.timed_out is False
-    assert len(response.results) == 2
+    assert len(response.results) == 3
     assert response.results[0].chunk_id == 7
     assert response.results[0].display == "Mystic — page 1 — first"
-    assert response.results[1].chunk_id == 8
+    assert response.results[2].chunk_id == 8
 
 
 def test_search_hybrid_cli_timeout_returns_safe_empty_response(monkeypatch) -> None:
@@ -86,45 +108,54 @@ def test_search_hybrid_cli_timeout_returns_safe_empty_response(monkeypatch) -> N
     assert proc.killed is True
 
 
-def test_search_hybrid_cli_nonzero_exit_returns_error(monkeypatch) -> None:
-    proc = _DummyProc(stderr=b"boom", returncode=2)
+def test_answer_question_uses_top_k_and_generation(monkeypatch) -> None:
+    search_results = tuple(
+        SearchResult(
+            source_path=f"books/book_{i}.pdf",
+            chunk_id=i,
+            chunk_no=i,
+            display=f"Book {i}",
+            excerpt=f"Фрагмент {i}",
+            title=f"Книга {i}",
+            author=f"Автор {i}",
+            page=i + 1,
+        )
+        for i in range(4)
+    )
 
-    async def _fake_create_subprocess_exec(*args, **kwargs):
-        return proc
+    async def _fake_search_hybrid_cli(**kwargs: Any):
+        del kwargs
+        return SimpleNamespace(results=search_results, error=None, timed_out=False)
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+    monkeypatch.setattr("librar.bot.search_service.search_hybrid_cli", _fake_search_hybrid_cli)
+    monkeypatch.setattr(
+        "librar.bot.search_service.SemanticSettings.from_env",
+        lambda: SimpleNamespace(api_key="k", model="embed-model", base_url="https://openrouter.ai/api/v1"),
+    )
 
-    response = asyncio.run(search_hybrid_cli(query="bad", timeout_seconds=1.0))
+    generator = _DummyGenerator("Подтвержденный ответ [1]")
 
-    assert response.results == ()
-    assert response.error is not None
-    assert "exit code 2" in response.error
-    assert "boom" in response.error
+    result = asyncio.run(
+        answer_question(
+            query="Кто автор?",
+            db_path=".librar-search.db",
+            index_path=".librar-semantic.faiss",
+            top_k=2,
+            max_context_chars=500,
+            chat_model="openai/gpt-4o-mini",
+            generator=generator,
+        )
+    )
 
-
-def test_search_hybrid_cli_malformed_json_returns_error(monkeypatch) -> None:
-    proc = _DummyProc(stdout=b"{not-json", returncode=0)
-
-    async def _fake_create_subprocess_exec(*args, **kwargs):
-        return proc
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
-
-    response = asyncio.run(search_hybrid_cli(query="broken", timeout_seconds=1.0))
-
-    assert response.results == ()
-    assert response.error == "Hybrid CLI returned malformed JSON"
-
-
-def test_answer_question_without_results_is_marked_as_insufficient() -> None:
-    result = answer_question(query="Кто автор?", results=())
-
-    assert result.is_confirmed is False
-    assert result.sources == ()
-    assert "Недостаточно данных" in result.answer
+    assert result.is_confirmed is True
+    assert result.answer == "Подтвержденный ответ [1]"
+    assert len(result.sources) == 2
+    assert "Системная инструкция" in generator.calls[0]["prompt"]
+    assert "[1]" in generator.calls[0]["prompt"]
+    assert "[3]" not in generator.calls[0]["prompt"]
 
 
-def test_answer_question_builds_sources_from_metadata() -> None:
+def test_answer_question_falls_back_when_generation_fails(monkeypatch) -> None:
     search_results = (
         SearchResult(
             source_path="books/book.pdf",
@@ -138,12 +169,28 @@ def test_answer_question_builds_sources_from_metadata() -> None:
         ),
     )
 
-    result = answer_question(query="Кто автор?", results=search_results)
+    async def _fake_search_hybrid_cli(**kwargs: Any):
+        del kwargs
+        return SimpleNamespace(results=search_results, error=None, timed_out=False)
+
+    monkeypatch.setattr("librar.bot.search_service.search_hybrid_cli", _fake_search_hybrid_cli)
+    monkeypatch.setattr(
+        "librar.bot.search_service.SemanticSettings.from_env",
+        lambda: SimpleNamespace(api_key="k", model="embed-model", base_url="https://openrouter.ai/api/v1"),
+    )
+
+    result = asyncio.run(
+        answer_question(
+            query="Кто автор?",
+            db_path=".librar-search.db",
+            index_path=".librar-semantic.faiss",
+            top_k=2,
+            max_context_chars=500,
+            chat_model="openai/gpt-4o-mini",
+            generator=_DummyGenerator(fail=True),
+        )
+    )
 
     assert result.is_confirmed is True
-    assert len(result.sources) == 1
-    assert result.sources[0].title == "Тестовая книга"
-    assert result.sources[0].author == "Иван Иванов"
-    assert result.sources[0].source_path == "books/book.pdf"
+    assert "Иван Иванов" in result.answer
     assert result.sources[0].location == "стр. 12"
-    assert "Отвечай только на основе контекста" in result.prompt

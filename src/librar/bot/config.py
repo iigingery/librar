@@ -14,6 +14,9 @@ DEFAULT_INLINE_TIMEOUT_SECONDS = 25.0
 DEFAULT_INLINE_RESULT_LIMIT = 20
 DEFAULT_COMMAND_RESULT_LIMIT = 10
 DEFAULT_PAGE_SIZE = 5
+DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_RAG_TOP_K = 5
+DEFAULT_RAG_MAX_CONTEXT_CHARS = 6000
 
 
 def _parse_positive_int(*, name: str, raw_value: str, minimum: int = 1) -> int:
@@ -41,6 +44,9 @@ class BotSettings:
     inline_result_limit: int = DEFAULT_INLINE_RESULT_LIMIT
     command_result_limit: int = DEFAULT_COMMAND_RESULT_LIMIT
     page_size: int = DEFAULT_PAGE_SIZE
+    openrouter_chat_model: str = DEFAULT_OPENROUTER_CHAT_MODEL
+    rag_top_k: int = DEFAULT_RAG_TOP_K
+    rag_max_context_chars: int = DEFAULT_RAG_MAX_CONTEXT_CHARS
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "BotSettings":
@@ -62,6 +68,9 @@ class BotSettings:
         inline_limit_raw = source.get("TELEGRAM_INLINE_RESULT_LIMIT", str(DEFAULT_INLINE_RESULT_LIMIT)).strip()
         command_limit_raw = source.get("TELEGRAM_COMMAND_RESULT_LIMIT", str(DEFAULT_COMMAND_RESULT_LIMIT)).strip()
         page_size_raw = source.get("TELEGRAM_PAGE_SIZE", str(DEFAULT_PAGE_SIZE)).strip()
+        chat_model_raw = source.get("OPENROUTER_CHAT_MODEL", DEFAULT_OPENROUTER_CHAT_MODEL).strip()
+        rag_top_k_raw = source.get("RAG_TOP_K", str(DEFAULT_RAG_TOP_K)).strip()
+        rag_max_context_chars_raw = source.get("RAG_MAX_CONTEXT_CHARS", str(DEFAULT_RAG_MAX_CONTEXT_CHARS)).strip()
 
         if not timeout_raw:
             raise ValueError("TELEGRAM_INLINE_TIMEOUT_SECONDS cannot be empty")
@@ -71,6 +80,12 @@ class BotSettings:
             raise ValueError("TELEGRAM_COMMAND_RESULT_LIMIT cannot be empty")
         if not page_size_raw:
             raise ValueError("TELEGRAM_PAGE_SIZE cannot be empty")
+        if not chat_model_raw:
+            raise ValueError("OPENROUTER_CHAT_MODEL cannot be empty")
+        if not rag_top_k_raw:
+            raise ValueError("RAG_TOP_K cannot be empty")
+        if not rag_max_context_chars_raw:
+            raise ValueError("RAG_MAX_CONTEXT_CHARS cannot be empty")
 
         inline_timeout_seconds = _parse_positive_float(
             name="TELEGRAM_INLINE_TIMEOUT_SECONDS",
@@ -92,6 +107,16 @@ class BotSettings:
             raw_value=page_size_raw,
             minimum=1,
         )
+        rag_top_k = _parse_positive_int(
+            name="RAG_TOP_K",
+            raw_value=rag_top_k_raw,
+            minimum=1,
+        )
+        rag_max_context_chars = _parse_positive_int(
+            name="RAG_MAX_CONTEXT_CHARS",
+            raw_value=rag_max_context_chars_raw,
+            minimum=100,
+        )
 
         return cls(
             token=token,
@@ -101,4 +126,7 @@ class BotSettings:
             inline_result_limit=inline_result_limit,
             command_result_limit=command_result_limit,
             page_size=page_size,
+            openrouter_chat_model=chat_model_raw,
+            rag_top_k=rag_top_k,
+            rag_max_context_chars=rag_max_context_chars,
         )

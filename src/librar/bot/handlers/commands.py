@@ -1,4 +1,4 @@
-"""Command handlers for /start, /help, /search, and /books."""
+"""Command handlers for /start, /help, /search, /ask, and /books."""
 
 from __future__ import annotations
 
@@ -60,6 +60,27 @@ def _resolve_command_result_limit(context: ContextTypes.DEFAULT_TYPE) -> int:
     return int(limit)
 
 
+def _resolve_chat_model(context: ContextTypes.DEFAULT_TYPE) -> str:
+    model = context.bot_data.get("openrouter_chat_model")
+    if model is None:
+        raise RuntimeError("openrouter_chat_model missing from context.bot_data['openrouter_chat_model']")
+    return str(model)
+
+
+def _resolve_rag_top_k(context: ContextTypes.DEFAULT_TYPE) -> int:
+    top_k = context.bot_data.get("rag_top_k")
+    if top_k is None:
+        raise RuntimeError("rag_top_k missing from context.bot_data['rag_top_k']")
+    return int(top_k)
+
+
+def _resolve_rag_max_context_chars(context: ContextTypes.DEFAULT_TYPE) -> int:
+    max_chars = context.bot_data.get("rag_max_context_chars")
+    if max_chars is None:
+        raise RuntimeError("rag_max_context_chars missing from context.bot_data['rag_max_context_chars']")
+    return int(max_chars)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command with usage instructions."""
     del context
@@ -70,6 +91,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "Добро пожаловать в библиотечного бота!\n\n"
         "Используйте:\n"
         "• /search <запрос> — прямой поиск в личных сообщениях\n"
+        "• /ask <вопрос> — ответ с подтверждением по источникам\n"
         "• @botname <запрос> — встроенный поиск в любом чате (inline mode)\n"
         "• /books — список всех книг в библиотеке\n"
         "• /settings — настройки размера отрывков\n"
@@ -90,6 +112,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/start — приветствие и основные команды\n"
         "/search <запрос> — поиск отрывков в библиотеке\n"
         "  Пример: /search космос\n\n"
+        "/ask <вопрос> — RAG-ответ на основе найденных фрагментов\n"
+        "  Пример: /ask Кто автор книги?\n\n"
         "/books — показать все книги с метаданными\n"
         "  Навигация: кнопки Предыдущая/Следующая\n\n"
         "/settings — изменить размер отрывков (50-500 символов)\n\n"
@@ -146,20 +170,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"Ничего не найдено по запросу: {query}")
         return
 
-    answer_result = answer_question(query=query, results=response.results)
-
     # Store full results in user_data for pagination
     context.user_data["search_query"] = query
     context.user_data["search_results"] = response.results
     context.user_data["search_excerpt_size"] = excerpt_size
-    context.user_data["search_answer"] = answer_result
-
-    formatted_answer = _format_answer_message(
-        answer_result.answer,
-        answer_result.sources,
-        confirmed=answer_result.is_confirmed,
-    )
-    await update.message.reply_text(formatted_answer)
 
     # Render first page
     total = len(response.results)
@@ -177,6 +191,39 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(text, reply_markup=reply_markup)
     else:
         await update.message.reply_text(text)
+
+
+async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /ask <question> command with retrieval-augmented answer."""
+    if update.message is None:
+        return
+
+    query = " ".join(context.args or []).strip()
+    if not query:
+        await update.message.reply_text("Использование: /ask <вопрос>\n\nПример: /ask Кто автор книги?")
+        return
+
+    db_path = _resolve_db_path(context)
+    index_path = _resolve_index_path(context)
+    chat_model = _resolve_chat_model(context)
+    top_k = _resolve_rag_top_k(context)
+    max_context_chars = _resolve_rag_max_context_chars(context)
+
+    answer_result = await answer_question(
+        query=query,
+        db_path=db_path,
+        index_path=index_path,
+        top_k=top_k,
+        max_context_chars=max_context_chars,
+        chat_model=chat_model,
+    )
+
+    formatted_answer = _format_answer_message(
+        answer_result.answer,
+        answer_result.sources,
+        confirmed=answer_result.is_confirmed,
+    )
+    await update.message.reply_text(formatted_answer)
 
 
 async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -219,5 +266,6 @@ def build_command_handlers() -> list[CommandHandler]:
         CommandHandler("start", start_command),
         CommandHandler("help", help_command),
         CommandHandler("search", search_command),
+        CommandHandler("ask", ask_command),
         CommandHandler("books", books_command),
     ]
