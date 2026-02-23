@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from librar.bot.handlers.common import _resolve_page_size, _resolve_repository
+from librar.bot.handlers.renderers import (
+    build_pagination_keyboard,
+    render_books_page,
+    render_search_page,
+)
 
 
 async def search_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -70,32 +75,21 @@ async def search_page_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("Страница не существует.")
         return
 
-    # Render page
-    page_results = results[offset : offset + page_size]
-    text = f"Найдено {total} результатов для: {search_query}\n\n"
+    text = render_search_page(
+        results=results,
+        search_query=search_query,
+        excerpt_size=excerpt_size,
+        page_num=page_num,
+        page_size=page_size,
+    )
 
-    for idx, result in enumerate(page_results, offset + 1):
-        excerpt = result.excerpt[:excerpt_size] if len(result.excerpt) > excerpt_size else result.excerpt
-        text += f"{idx}. {result.display}\n{excerpt}...\n\n"
-
-    # Build navigation buttons
-    buttons = []
-    if page_num > 0:
-        callback_data = (
-            f"search_page_{session_key}_{page_num - 1}" if session_key is not None else f"search_page_{page_num - 1}"
-        )
-        buttons.append(InlineKeyboardButton("← Предыдущая", callback_data=callback_data))
-    if offset + page_size < total:
-        callback_data = (
-            f"search_page_{session_key}_{page_num + 1}" if session_key is not None else f"search_page_{page_num + 1}"
-        )
-        buttons.append(InlineKeyboardButton("Следующая →", callback_data=callback_data))
-
-    if buttons:
-        reply_markup = InlineKeyboardMarkup([buttons])
-        await query.edit_message_text(text, reply_markup=reply_markup)
-    else:
-        await query.edit_message_text(text)
+    reply_markup = build_pagination_keyboard(
+        prefix="search_page",
+        session_key=session_key,
+        page_num=page_num,
+        has_next=offset + page_size < total,
+    )
+    await query.edit_message_text(text, reply_markup=reply_markup)
 
 
 async def books_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -152,32 +146,15 @@ async def books_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Backward compatibility with legacy offset storage
     context.user_data["books_page_offset"] = offset
 
-    # Render page
-    text = f"Всего книг: {book_page.total}\n\n"
-    for item in book_page.items:
-        title = item.title or "Без названия"
-        author = item.author or "Неизвестный автор"
-        format_name = item.format_name or "?"
-        text += f"• {title} — {author} ({format_name})\n"
+    text = render_books_page(items=book_page.items, total=book_page.total)
 
-    # Build navigation buttons
-    buttons = []
-    if page_num > 0:
-        callback_data = (
-            f"books_page_{session_key}_{page_num - 1}" if session_key is not None else f"books_page_{page_num - 1}"
-        )
-        buttons.append(InlineKeyboardButton("← Предыдущая", callback_data=callback_data))
-    if offset + page_size < book_page.total:
-        callback_data = (
-            f"books_page_{session_key}_{page_num + 1}" if session_key is not None else f"books_page_{page_num + 1}"
-        )
-        buttons.append(InlineKeyboardButton("Следующая →", callback_data=callback_data))
-
-    if buttons:
-        reply_markup = InlineKeyboardMarkup([buttons])
-        await query.edit_message_text(text, reply_markup=reply_markup)
-    else:
-        await query.edit_message_text(text)
+    reply_markup = build_pagination_keyboard(
+        prefix="books_page",
+        session_key=session_key,
+        page_num=page_num,
+        has_next=offset + page_size < book_page.total,
+    )
+    await query.edit_message_text(text, reply_markup=reply_markup)
 
 
 def build_callback_handlers() -> list[CallbackQueryHandler]:
