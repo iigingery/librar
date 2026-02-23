@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from librar.search.repository import ChunkRow, SearchRepository
+from librar.semantic.config import SemanticSettings
 from librar.semantic.query import SemanticQueryService
 from librar.semantic.semantic_repository import SemanticRepository
 from librar.semantic.vector_store import FaissVectorStore
@@ -248,3 +249,30 @@ def test_semantic_query_supports_author_and_format_filters(tmp_path: Path) -> No
     assert hits[0].source_path == "allowed.fb2"
     assert hits[0].author == "Nisargadatta Maharaj"
     assert hits[0].format_name == "fb2"
+
+
+def test_semantic_from_db_path_fails_on_model_mismatch(tmp_path: Path) -> None:
+    db_path = tmp_path / "semantic.db"
+    index_path = tmp_path / "semantic.faiss"
+
+    with SearchRepository(db_path) as repo:
+        semantic_repo = SemanticRepository(repo.connection)
+        semantic_repo.upsert_index_state(
+            model="indexed-model",
+            dimension=3,
+            metric="ip",
+            index_path=str(index_path),
+        )
+
+    settings = SemanticSettings(
+        api_key="test-key",
+        model="configured-model",
+        base_url="https://openrouter.ai/api/v1",
+    )
+
+    with pytest.raises(RuntimeError, match="model mismatch"):
+        SemanticQueryService.from_db_path(
+            db_path=db_path,
+            index_path=index_path,
+            settings=settings,
+        )

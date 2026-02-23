@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
 from librar.hybrid.query import HybridQueryService
 from librar.search.repository import ChunkRow, SearchRepository
+from librar.semantic.config import SemanticSettings
 from librar.semantic.query import SemanticSearchHit
+from librar.semantic.semantic_repository import SemanticRepository
 
 
 def _insert_single_chunk(
@@ -255,3 +258,30 @@ def test_hybrid_reranks_by_question_alignment_for_long_query(tmp_path: Path) -> 
 
     assert len(results) >= 2
     assert results[0].chunk_id == relevant_id
+
+
+def test_hybrid_from_db_path_fails_on_model_mismatch(tmp_path: Path) -> None:
+    db_path = tmp_path / "hybrid.db"
+    index_path = tmp_path / "hybrid.faiss"
+
+    with SearchRepository(db_path) as repo:
+        semantic_repo = SemanticRepository(repo.connection)
+        semantic_repo.upsert_index_state(
+            model="indexed-model",
+            dimension=3,
+            metric="ip",
+            index_path=str(index_path),
+        )
+
+    settings = SemanticSettings(
+        api_key="test-key",
+        model="configured-model",
+        base_url="https://openrouter.ai/api/v1",
+    )
+
+    with pytest.raises(RuntimeError, match="model mismatch"):
+        HybridQueryService.from_db_path(
+            db_path=db_path,
+            index_path=index_path,
+            settings=settings,
+        )

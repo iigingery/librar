@@ -304,6 +304,13 @@ class HybridQueryService:
             raise RuntimeError("Semantic index is not initialized. Run semantic indexing before hybrid queries.")
 
         resolved_settings = settings or SemanticSettings.from_env()
+        if index_state.model != resolved_settings.model:
+            search_repository.close()
+            raise RuntimeError(
+                "Semantic index model mismatch: "
+                f"indexed='{index_state.model}', configured='{resolved_settings.model}'. "
+                "Reindex with `python -m librar.cli.index_semantic`."
+            )
         vector_store = FaissVectorStore(index_path, dimension=index_state.dimension, metric=index_state.metric)
         embedder = OpenRouterEmbedder(resolved_settings)
         semantic_service = SemanticQueryService(
