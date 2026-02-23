@@ -110,6 +110,7 @@ def test_ingestion_pipeline_result_dataclass_construction() -> None:
     assert result.success is True
     assert result.title == "Test"
     assert result.chunk_count == 10
+    assert result.stage == "unknown"
 
 
 def test_run_ingestion_pipeline_success(monkeypatch) -> None:
@@ -158,6 +159,7 @@ def test_run_ingestion_pipeline_success(monkeypatch) -> None:
     assert result.format_name == "pdf"
     assert result.chunk_count == 12
     assert result.is_duplicate is False
+    assert result.stage == "done"
     assert len(calls) == 3
     assert "librar.cli.ingest_books" in calls[0]
     assert "librar.cli.index_books" in calls[1]
@@ -184,4 +186,5 @@ def test_run_ingestion_pipeline_failure_returns_error(monkeypatch) -> None:
 
     assert result.success is False
     assert result.error is not None
+    assert result.stage == "ingest"
     assert "ingest failed" in result.error

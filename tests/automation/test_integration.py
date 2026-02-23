@@ -80,6 +80,7 @@ async def test_pipeline_success_calls_ingest_and_both_indexers_sequentially() ->
 
     assert result.success is True
     assert result.is_duplicate is False
+    assert result.stage == "done"
     assert len(calls) == 3
 
     ingest_call = calls[0]
@@ -125,6 +126,7 @@ async def test_pipeline_duplicate_skips_indexing_commands() -> None:
 
     assert result.success is True
     assert result.is_duplicate is True
+    assert result.stage == "ingest"
     assert len(calls) == 1
     assert "librar.cli.ingest_books" in calls[0]
 
@@ -145,6 +147,7 @@ async def test_pipeline_failure_returns_error_message() -> None:
 
     assert result.success is False
     assert result.error is not None
+    assert result.stage == "ingest"
     assert "ingest failed" in result.error
 
 
@@ -170,6 +173,7 @@ async def test_pipeline_timeout_returns_error() -> None:
 
     assert result.success is False
     assert result.error is not None
+    assert result.stage == "ingest"
     assert "Timed out" in result.error
 
 
