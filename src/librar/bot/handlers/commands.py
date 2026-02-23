@@ -26,6 +26,13 @@ from librar.bot.search_service import AnswerSource, answer_question, search_hybr
 
 logger = logging.getLogger(__name__)
 
+SEARCH_TIPS = (
+    "Подсказки:\n"
+    "• сократите запрос\n"
+    "• уберите редкие слова\n"
+    "• попробуйте /ask"
+)
+
 
 def _format_answer_message(answer_text: str, sources: tuple[AnswerSource, ...], *, confirmed: bool) -> str:
     status_line = "✅ Подтверждённый ответ" if confirmed else "⚠️ Недостаточно данных"
@@ -164,7 +171,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
     if response.timed_out:
-        await update.message.reply_text("Поиск превысил лимит времени. Попробуйте упростить запрос.")
+        await update.message.reply_text(
+            "Поиск превысил лимит времени.\n\n"
+            f"{SEARCH_TIPS}"
+        )
         return
 
     if response.error:
@@ -172,7 +182,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     if not response.results:
-        await update.message.reply_text(f"Ничего не найдено по запросу: {query_text}")
+        await update.message.reply_text(
+            f"Ничего не найдено по запросу: {query_text}\n\n"
+            f"{SEARCH_TIPS}"
+        )
         return
 
     # Store full results in user_data under session key for pagination

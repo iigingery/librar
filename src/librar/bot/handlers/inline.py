@@ -21,6 +21,11 @@ from librar.bot.search_service import search_hybrid_cli
 logger = logging.getLogger(__name__)
 
 INLINE_MAX_RESULTS = 50
+INLINE_DESCRIPTION_LIMIT = 200
+
+
+def _build_search_tips_line() -> str:
+    return "Подсказки: сократите запрос, уберите редкие слова, попробуйте /ask"
 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -74,9 +79,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         error_article = InlineQueryResultArticle(
             id="error",
             title="Ошибка поиска",
-            description=response.error if response.error else "Поиск превысил лимит времени",
+            description=(response.error if response.error else "Поиск превысил лимит времени")[:INLINE_DESCRIPTION_LIMIT],
             input_message_content=InputTextMessageContent(
-                message_text=f"⚠️ {response.error if response.error else 'Timeout'}"
+                message_text=(
+                    f"⚠️ {response.error if response.error else 'Timeout'}\n\n"
+                    f"{_build_search_tips_line()}"
+                )
             ),
         )
         await update.inline_query.answer([error_article], cache_time=0)
@@ -87,9 +95,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         no_results_article = InlineQueryResultArticle(
             id="no_results",
             title="Ничего не найдено",
-            description=f"Попробуйте другой запрос: {query_text}",
+            description=_build_search_tips_line()[:INLINE_DESCRIPTION_LIMIT],
             input_message_content=InputTextMessageContent(
-                message_text=f"Ничего не найдено по запросу: {query_text}"
+                message_text=(
+                    f"Ничего не найдено по запросу: {query_text}\n\n"
+                    f"{_build_search_tips_line()}"
+                )
             ),
         )
         await update.inline_query.answer([no_results_article], cache_time=10)
@@ -108,7 +119,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if result.author:
             description_parts.append(f"({result.author})")
 
-        description = " ".join(description_parts)[:200]  # Telegram description limit
+        description = " ".join(description_parts)[:INLINE_DESCRIPTION_LIMIT]
 
         # Build message content
         message_parts = [f"📖 {result.display}\n", excerpt]
