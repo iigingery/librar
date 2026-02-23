@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 
+DEFAULT_RELEVANCE_THRESHOLD = 0.2
+
+
 def _normalize(values: Mapping[int, float], *, higher_is_better: bool) -> dict[int, float]:
     if not values:
         return {}
@@ -83,3 +86,15 @@ def order_fused_scores(
             chunk_id,
         ),
     )
+
+
+def filter_relevant_scores(
+    fused_scores: Mapping[int, float],
+    *,
+    min_score: float = DEFAULT_RELEVANCE_THRESHOLD,
+) -> dict[int, float]:
+    """Keep only scores that satisfy the minimum relevance threshold."""
+
+    if min_score < 0.0:
+        raise ValueError("min_score cannot be negative")
+    return {chunk_id: score for chunk_id, score in fused_scores.items() if float(score) >= min_score}

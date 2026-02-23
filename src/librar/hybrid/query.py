@@ -12,6 +12,7 @@ from librar.hybrid.scoring import (
     normalize_keyword_ranks,
     normalize_semantic_scores,
     order_fused_scores,
+    filter_relevant_scores,
 )
 from librar.search.query import SearchHit, search_chunks
 from librar.search.repository import SearchRepository
@@ -225,6 +226,9 @@ class HybridQueryService:
             exact_match_ids=exact_ids,
             exact_match_boost=0.45,
         )
+        fused = filter_relevant_scores(fused)
+        if not fused:
+            return []
 
         tie_breakers: dict[int, tuple[object, ...]] = {}
         for chunk_id in fused:
