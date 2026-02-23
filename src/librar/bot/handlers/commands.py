@@ -81,6 +81,39 @@ def _resolve_rag_max_context_chars(context: ContextTypes.DEFAULT_TYPE) -> int:
     return int(max_chars)
 
 
+def _resolve_chat_id(update: Update) -> int | None:
+    chat = getattr(update, "effective_chat", None)
+    if chat is not None:
+        return int(chat.id)
+
+    message = update.message
+    if message is not None:
+        chat_id = getattr(message, "chat_id", None)
+        if chat_id is not None:
+            return int(chat_id)
+
+    user = getattr(update, "effective_user", None)
+    if user is not None:
+        return int(user.id)
+    return None
+
+
+def _build_session_key(chat_id: int, message_id: int) -> str:
+    return f"{chat_id}:{message_id}"
+
+
+def _cleanup_chat_sessions(
+    sessions: dict[str, object],
+    *,
+    chat_id: int,
+    active_session_key: str,
+) -> None:
+    chat_prefix = f"{chat_id}:"
+    stale_keys = [key for key in sessions if key.startswith(chat_prefix) and key != active_session_key]
+    for stale_key in stale_keys:
+        sessions.pop(stale_key, None)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command with usage instructions."""
     del context
@@ -132,9 +165,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.message is None:
         return
 
-    user = update.effective_user
+    user = getattr(update, "effective_user", None)
     if user is None:
         await update.message.reply_text("Не удалось определить пользователя.")
+        return
+
+    chat_id = _resolve_chat_id(update)
+    if chat_id is None:
+        await update.message.reply_text("Не удалось определить чат.")
         return
 
     query = " ".join(context.args or []).strip()
@@ -172,7 +210,22 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"Ничего не найдено по запросу: {query}")
         return
 
-    # Store full results in user_data for pagination
+    # Store full results in user_data under session key for pagination
+    search_sessions = context.user_data.setdefault("search_sessions", {})
+    if not isinstance(search_sessions, dict):
+        search_sessions = {}
+        context.user_data["search_sessions"] = search_sessions
+
+    message_id = int(getattr(update.message, "message_id", 0))
+    session_key = _build_session_key(chat_id, message_id)
+    search_sessions[session_key] = {
+        "query": query,
+        "results": response.results,
+        "excerpt_size": excerpt_size,
+    }
+    _cleanup_chat_sessions(search_sessions, chat_id=chat_id, active_session_key=session_key)
+
+    # Backward compatibility with legacy pagination storage
     context.user_data["search_query"] = query
     context.user_data["search_results"] = response.results
     context.user_data["search_excerpt_size"] = excerpt_size
@@ -188,7 +241,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Build pagination keyboard if more results exist
     if total > page_size:
-        keyboard = [[InlineKeyboardButton("Следующая →", callback_data="search_page_1")]]
+        keyboard = [
+            [InlineKeyboardButton("Следующая →", callback_data=f"search_page_{session_key}_1")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(text, reply_markup=reply_markup)
     else:
@@ -205,8 +260,8 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Использование: /ask <вопрос>\n\nПример: /ask Кто автор книги?")
         return
 
-    chat = update.effective_chat
-    user = update.effective_user
+    chat = getattr(update, "effective_chat", None)
+    user = getattr(update, "effective_user", None)
     if chat is None or user is None:
         await update.message.reply_text("Не удалось определить чат или пользователя.")
         return
@@ -263,8 +318,8 @@ async def reset_context_command(update: Update, context: ContextTypes.DEFAULT_TY
     if update.message is None:
         return
 
-    chat = update.effective_chat
-    user = update.effective_user
+    chat = getattr(update, "effective_chat", None)
+    user = getattr(update, "effective_user", None)
     if chat is None or user is None:
         await update.message.reply_text("Не удалось определить чат или пользователя.")
         return
@@ -280,6 +335,11 @@ async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if update.message is None:
         return
 
+    chat_id = _resolve_chat_id(update)
+    if chat_id is None:
+        await update.message.reply_text("Не удалось определить чат.")
+        return
+
     repository = _resolve_repository(context)
     page_size = _resolve_page_size(context)
 
@@ -289,8 +349,16 @@ async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("Библиотека пуста.")
         return
 
-    # Store pagination state
-    context.user_data["books_page_offset"] = 0
+    # Store pagination session state
+    book_sessions = context.user_data.setdefault("book_sessions", {})
+    if not isinstance(book_sessions, dict):
+        book_sessions = {}
+        context.user_data["book_sessions"] = book_sessions
+
+    message_id = int(getattr(update.message, "message_id", 0))
+    session_key = _build_session_key(chat_id, message_id)
+    book_sessions[session_key] = {"created_from": message_id}
+    _cleanup_chat_sessions(book_sessions, chat_id=chat_id, active_session_key=session_key)
 
     # Render first page
     text = f"Всего книг: {book_page.total}\n\n"
@@ -302,7 +370,7 @@ async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     # Build pagination keyboard if more books exist
     if book_page.total > page_size:
-        keyboard = [[InlineKeyboardButton("Следующая →", callback_data="books_page_1")]]
+        keyboard = [[InlineKeyboardButton("Следующая →", callback_data=f"books_page_{session_key}_1")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(text, reply_markup=reply_markup)
     else:
