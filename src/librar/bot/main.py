@@ -47,12 +47,15 @@ def build_application(settings: BotSettings) -> Application:
     application.bot_data["inline_result_limit"] = settings.inline_result_limit
     application.bot_data["command_result_limit"] = settings.command_result_limit
     application.bot_data["page_size"] = settings.page_size
+    application.bot_data["openrouter_chat_model"] = settings.openrouter_chat_model
+    application.bot_data["rag_top_k"] = settings.rag_top_k
+    application.bot_data["rag_max_context_chars"] = settings.rag_max_context_chars
 
     # Register all handlers in correct order
     # 1. Settings conversation (highest priority for /settings command)
     application.add_handler(build_settings_conversation_handler())
 
-    # 2. Command handlers (/start, /help, /search, /books)
+    # 2. Command handlers (/start, /help, /search, /ask, /books)
     for handler in build_command_handlers():
         application.add_handler(handler)
 

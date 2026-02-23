@@ -1,4 +1,4 @@
-"""Async bridge from bot handlers to hybrid search CLI."""
+"""Async bridge from bot handlers to hybrid search CLI and RAG answer generation."""
 
 from __future__ import annotations
 
@@ -9,8 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 import sys
 
+from librar.semantic.config import SemanticSettings
+from librar.semantic.openrouter import OpenRouterGenerator
+
 
 DEFAULT_SEARCH_TIMEOUT_SECONDS = 25.0
+DEFAULT_GENERATION_TEMPERATURE = 0.2
+DEFAULT_GENERATION_MAX_TOKENS = 350
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,27 +136,30 @@ def _format_location(result: SearchResult) -> str:
     return f"позиция {max(result.chunk_no, 0) + 1}"
 
 
-def _build_prompt(*, query: str, results: tuple[SearchResult, ...]) -> str:
+def _build_prompt(*, query: str, results: tuple[SearchResult, ...], max_context_chars: int) -> str:
     fragments: list[str] = []
+    current_len = 0
     for idx, result in enumerate(results, 1):
         location = _format_location(result)
-        fragments.append(
-            (
-                f"[{idx}] title={result.title or 'Без названия'}; "
-                f"author={result.author or 'Неизвестный автор'}; "
-                f"source_path={result.source_path}; "
-                f"location={location}\n"
-                f"Фрагмент: {result.excerpt}"
-            )
+        fragment = (
+            f"[{idx}] title={result.title or 'Без названия'}; "
+            f"author={result.author or 'Неизвестный автор'}; "
+            f"source_path={result.source_path}; "
+            f"location={location}\n"
+            f"Фрагмент: {result.excerpt}"
         )
+        if fragments and current_len + len(fragment) > max_context_chars:
+            break
+        fragments.append(fragment)
+        current_len += len(fragment)
 
     context_block = "\n\n".join(fragments)
     return (
-        "Ты помощник библиотечного бота. "
-        "Отвечай только на основе контекста ниже. "
+        "Системная инструкция:\n"
+        "Ты помощник библиотечного бота. Отвечай только на основе контекста ниже. "
         "Если контекста недостаточно, прямо напиши: 'Недостаточно данных в источниках'. "
         "Каждое утверждение подтверждай ссылками на фрагменты в формате [n].\n\n"
-        f"Вопрос: {query}\n\n"
+        f"Вопрос пользователя: {query}\n\n"
         f"Контекст:\n{context_block}"
     )
 
@@ -176,16 +184,7 @@ def _build_sources(results: tuple[SearchResult, ...]) -> tuple[AnswerSource, ...
     return tuple(sources)
 
 
-def answer_question(*, query: str, results: tuple[SearchResult, ...]) -> AnswerResult:
-    if not results:
-        return AnswerResult(
-            answer="Недостаточно данных в источниках для подтверждённого ответа.",
-            sources=(),
-            is_confirmed=False,
-            prompt="",
-        )
-
-    prompt = _build_prompt(query=query, results=results)
+def _fallback_answer(*, prompt: str, results: tuple[SearchResult, ...]) -> AnswerResult:
     sources = _build_sources(results)
     if not sources:
         return AnswerResult(
@@ -194,7 +193,6 @@ def answer_question(*, query: str, results: tuple[SearchResult, ...]) -> AnswerR
             is_confirmed=False,
             prompt=prompt,
         )
-
     lead_excerpt = results[0].excerpt.strip()
     if not lead_excerpt:
         return AnswerResult(
@@ -203,8 +201,60 @@ def answer_question(*, query: str, results: tuple[SearchResult, ...]) -> AnswerR
             is_confirmed=False,
             prompt=prompt,
         )
+    return AnswerResult(answer=f"{lead_excerpt} [1]", sources=sources, is_confirmed=True, prompt=prompt)
 
-    answer_text = f"{lead_excerpt} [1]"
+
+async def answer_question(
+    *,
+    query: str,
+    db_path: str | Path,
+    index_path: str | Path,
+    top_k: int,
+    max_context_chars: int,
+    chat_model: str,
+    temperature: float = DEFAULT_GENERATION_TEMPERATURE,
+    max_tokens: int = DEFAULT_GENERATION_MAX_TOKENS,
+    timeout_seconds: float = DEFAULT_SEARCH_TIMEOUT_SECONDS,
+    generator: OpenRouterGenerator | None = None,
+) -> AnswerResult:
+    response = await search_hybrid_cli(
+        query=query,
+        db_path=db_path,
+        index_path=index_path,
+        limit=top_k,
+        timeout_seconds=timeout_seconds,
+    )
+    if response.error or not response.results:
+        return AnswerResult(
+            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            sources=(),
+            is_confirmed=False,
+            prompt="",
+        )
+
+    selected = response.results[:top_k]
+    prompt = _build_prompt(query=query, results=selected, max_context_chars=max_context_chars)
+    semantic_settings = SemanticSettings.from_env()
+    rag_generator = generator or OpenRouterGenerator(semantic_settings)
+
+    try:
+        answer_text = rag_generator.generate_text(
+            prompt=prompt,
+            model=chat_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except Exception:
+        return _fallback_answer(prompt=prompt, results=selected)
+
+    sources = _build_sources(selected)
+    if not sources:
+        return AnswerResult(
+            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            sources=(),
+            is_confirmed=False,
+            prompt=prompt,
+        )
     return AnswerResult(answer=answer_text, sources=sources, is_confirmed=True, prompt=prompt)
 
 

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from librar.semantic.config import SemanticSettings
-from librar.semantic.openrouter import EmbeddingRequestError, OpenRouterEmbedder
+from librar.semantic.openrouter import EmbeddingRequestError, GenerationRequestError, OpenRouterEmbedder, OpenRouterGenerator
 
 
 def _response(vectors: list[list[float]]) -> SimpleNamespace:
@@ -107,3 +107,56 @@ def test_embedder_raises_on_terminal_failures() -> None:
 
     assert delays == [0.1, 0.2]
     assert len(client.embeddings.calls) == 3
+
+
+class _FakeChatCompletionsAPI:
+    def __init__(self, responses: list[object]) -> None:
+        self._responses = list(responses)
+        self.calls: list[dict[str, object]] = []
+
+    def create(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        if not self._responses:
+            raise RuntimeError("No fake response configured")
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+class _FakeGeneratorClient:
+    def __init__(self, responses: list[object]) -> None:
+        self.chat = SimpleNamespace(completions=_FakeChatCompletionsAPI(responses))
+
+
+def test_generator_returns_text_from_chat_completion() -> None:
+    response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Готовый ответ [1]"))])
+    client = _FakeGeneratorClient([response])
+    generator = OpenRouterGenerator(_settings(), client=client)
+
+    text = generator.generate_text(prompt="Вопрос", model="openai/gpt-4o-mini", temperature=0.3, max_tokens=120)
+
+    assert text == "Готовый ответ [1]"
+    assert len(client.chat.completions.calls) == 1
+
+
+def test_generator_retries_then_raises_on_terminal_failure() -> None:
+    delays: list[float] = []
+    client = _FakeGeneratorClient([
+        _HttpError(status_code=500, detail="temporary"),
+        _HttpError(status_code=500, detail="still failing"),
+        _HttpError(status_code=500, detail="final failure"),
+    ])
+    generator = OpenRouterGenerator(
+        _settings(),
+        client=client,
+        max_retries=2,
+        retry_base_seconds=0.1,
+        sleep=delays.append,
+    )
+
+    with pytest.raises(GenerationRequestError, match="openai/gpt-4o-mini"):
+        generator.generate_text(prompt="Вопрос", model="openai/gpt-4o-mini")
+
+    assert delays == [0.1, 0.2]
+    assert len(client.chat.completions.calls) == 3

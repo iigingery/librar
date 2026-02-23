@@ -31,6 +31,9 @@ def mock_settings(tmp_path: Path) -> BotSettings:
         inline_result_limit=20,
         command_result_limit=10,
         page_size=5,
+        openrouter_chat_model="openai/gpt-4o-mini",
+        rag_top_k=5,
+        rag_max_context_chars=6000,
     )
 
 
@@ -47,10 +50,10 @@ def test_build_application_registers_all_handler_types(mock_settings: BotSetting
     conv_handlers = [h for h in handlers if isinstance(h, ConversationHandler)]
     assert len(conv_handlers) == 1, "Expected exactly one ConversationHandler for /settings"
 
-    # Check for CommandHandlers (start, help, search, books)
+    # Check for CommandHandlers (start, help, search, ask, books)
     cmd_handlers = [h for h in handlers if isinstance(h, CommandHandler)]
-    # At least 4: /start, /help, /search, /books (settings entry also uses CommandHandler inside ConversationHandler)
-    assert len(cmd_handlers) >= 4, "Expected at least 4 standalone CommandHandlers"
+    # At least 5: /start, /help, /search, /ask, /books (settings entry also uses CommandHandler inside ConversationHandler)
+    assert len(cmd_handlers) >= 5, "Expected at least 5 standalone CommandHandlers"
 
     # Check for InlineQueryHandler
     inline_handlers = [h for h in handlers if isinstance(h, InlineQueryHandler)]
@@ -74,6 +77,9 @@ def test_build_application_stores_dependencies_in_bot_data(mock_settings: BotSet
     assert app.bot_data["inline_result_limit"] == mock_settings.inline_result_limit
     assert app.bot_data["command_result_limit"] == mock_settings.command_result_limit
     assert app.bot_data["page_size"] == mock_settings.page_size
+    assert app.bot_data["openrouter_chat_model"] == mock_settings.openrouter_chat_model
+    assert app.bot_data["rag_top_k"] == mock_settings.rag_top_k
+    assert app.bot_data["rag_max_context_chars"] == mock_settings.rag_max_context_chars
 
 
 def test_build_application_uses_provided_token(mock_settings: BotSettings) -> None:
@@ -113,6 +119,9 @@ def test_bot_settings_from_env_uses_defaults_for_optional_config() -> None:
     assert settings.inline_result_limit == 20
     assert settings.command_result_limit == 10
     assert settings.page_size == 5
+    assert settings.openrouter_chat_model == "openai/gpt-4o-mini"
+    assert settings.rag_top_k == 5
+    assert settings.rag_max_context_chars == 6000
 
 
 def test_bot_settings_from_env_parses_custom_config_values() -> None:
@@ -125,6 +134,9 @@ def test_bot_settings_from_env_parses_custom_config_values() -> None:
         "TELEGRAM_INLINE_RESULT_LIMIT": "50",
         "TELEGRAM_COMMAND_RESULT_LIMIT": "15",
         "TELEGRAM_PAGE_SIZE": "8",
+        "OPENROUTER_CHAT_MODEL": "openai/gpt-4o-mini",
+        "RAG_TOP_K": "7",
+        "RAG_MAX_CONTEXT_CHARS": "4500",
     }
 
     settings = BotSettings.from_env(custom_env)
@@ -136,6 +148,9 @@ def test_bot_settings_from_env_parses_custom_config_values() -> None:
     assert settings.inline_result_limit == 50
     assert settings.command_result_limit == 15
     assert settings.page_size == 8
+    assert settings.openrouter_chat_model == "openai/gpt-4o-mini"
+    assert settings.rag_top_k == 7
+    assert settings.rag_max_context_chars == 4500
 
 
 def test_bot_settings_from_env_rejects_invalid_numeric_values() -> None:
