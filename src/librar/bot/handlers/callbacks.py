@@ -5,23 +5,7 @@ from __future__ import annotations
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
-from librar.bot.repository import BotRepository
-
-
-def _resolve_repository(context: ContextTypes.DEFAULT_TYPE) -> BotRepository:
-    repository = context.bot_data.get("repository")
-    if repository is None:
-        raise RuntimeError("Bot repository missing from context.bot_data['repository']")
-    if not isinstance(repository, BotRepository):
-        raise TypeError("context.bot_data['repository'] must be a BotRepository")
-    return repository
-
-
-def _resolve_page_size(context: ContextTypes.DEFAULT_TYPE) -> int:
-    page_size = context.bot_data.get("page_size")
-    if page_size is None:
-        raise RuntimeError("page_size missing from context.bot_data['page_size']")
-    return int(page_size)
+from librar.bot.handlers.common import _resolve_page_size, _resolve_repository
 
 
 async def search_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
