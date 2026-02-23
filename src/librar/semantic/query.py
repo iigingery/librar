@@ -95,6 +95,13 @@ class SemanticQueryService:
         if index_state is None:
             search_repository.close()
             raise RuntimeError("Semantic index is not initialized. Run `python -m librar.cli.index_semantic` first.")
+        if index_state.model != resolved_settings.model:
+            search_repository.close()
+            raise RuntimeError(
+                "Semantic index model mismatch: "
+                f"indexed='{index_state.model}', configured='{resolved_settings.model}'. "
+                "Reindex with `python -m librar.cli.index_semantic`."
+            )
 
         vector_store = FaissVectorStore(index_path, dimension=index_state.dimension, metric=index_state.metric)
         embedder = OpenRouterEmbedder(resolved_settings)
