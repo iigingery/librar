@@ -20,6 +20,10 @@ DEFAULT_GENERATION_MAX_TOKENS = 350
 DEFAULT_MIN_RELEVANT_CHUNKS = 2
 DEFAULT_MIN_TOTAL_RELEVANCE = 0.7
 INSUFFICIENT_DATA_ANSWER = "В библиотеке нет достаточных данных по вопросу. Пожалуйста, переформулируйте запрос."
+GENERATION_TIMEOUT_ANSWER = (
+    "Не удалось вовремя сгенерировать ответ по найденным источникам. "
+    "Пожалуйста, попробуйте повторить запрос или немного сократить его."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,6 +291,7 @@ async def answer_question(
     temperature: float = DEFAULT_GENERATION_TEMPERATURE,
     max_tokens: int = DEFAULT_GENERATION_MAX_TOKENS,
     timeout_seconds: float = DEFAULT_SEARCH_TIMEOUT_SECONDS,
+    generation_timeout_seconds: float = DEFAULT_SEARCH_TIMEOUT_SECONDS,
     generator: OpenRouterGenerator | None = None,
     history: tuple[tuple[str, str], ...] = (),
 ) -> AnswerResult:
@@ -319,11 +324,22 @@ async def answer_question(
     rag_generator = generator or OpenRouterGenerator(semantic_settings)
 
     try:
-        answer_text = rag_generator.generate_text(
+        answer_text = await asyncio.wait_for(
+            asyncio.to_thread(
+                rag_generator.generate_text,
+                prompt=prompt,
+                model=chat_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            ),
+            timeout=generation_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        return AnswerResult(
+            answer=GENERATION_TIMEOUT_ANSWER,
+            sources=_build_sources(selected),
+            is_confirmed=False,
             prompt=prompt,
-            model=chat_model,
-            temperature=temperature,
-            max_tokens=max_tokens,
         )
     except Exception:
         return _fallback_answer(prompt=prompt, results=selected)
