@@ -24,6 +24,79 @@ from librar.semantic.vector_store import FaissVectorStore
 
 
 _WORD_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+")
+_MULTISPACE_RE = re.compile(r"\s+")
+_RU_STOPWORDS = {
+    "а",
+    "без",
+    "был",
+    "была",
+    "были",
+    "быть",
+    "в",
+    "во",
+    "вы",
+    "где",
+    "да",
+    "для",
+    "до",
+    "его",
+    "ее",
+    "если",
+    "же",
+    "за",
+    "и",
+    "из",
+    "или",
+    "как",
+    "когда",
+    "кто",
+    "ли",
+    "мне",
+    "мы",
+    "на",
+    "не",
+    "но",
+    "о",
+    "об",
+    "от",
+    "по",
+    "при",
+    "про",
+    "с",
+    "со",
+    "так",
+    "то",
+    "только",
+    "ты",
+    "у",
+    "уже",
+    "что",
+    "чтобы",
+    "я",
+    "здравствуйте",
+    "подскажите",
+    "пожалуйста",
+    "давно",
+    "пытаюсь",
+    "понять",
+    "можете",
+    "помочь",
+    "найти",
+    "книге",
+    "книгу",
+    "автор",
+    "подробно",
+    "обычной",
+    "ежедневной",
+}
+_DOMAIN_STEMS = ("практ", "вниман", "наблюд", "мысл", "тишин", "медитац", "внутрен")
+
+
+@dataclass(frozen=True, slots=True)
+class QueryRewrite:
+    normalized_query: str
+    search_query: str
+    key_terms: tuple[str, ...]
 
 
 class _SemanticSearcher(Protocol):
@@ -121,6 +194,86 @@ def _exact_match_ids(text_hits: list[SearchHit], *, query: str, phrase_mode: boo
     return exact_ids
 
 
+def _rewrite_query(query: str) -> QueryRewrite:
+    normalized = _MULTISPACE_RE.sub(" ", query.strip())
+    words = [word.casefold() for word in _WORD_RE.findall(normalized)]
+    long_question = len(words) >= 18 or len(normalized) >= 170
+
+    filtered: list[str] = []
+    seen_terms: set[str] = set()
+    for word in words:
+        if len(word) < 4 or word in _RU_STOPWORDS or word in seen_terms:
+            continue
+        filtered.append(word)
+        seen_terms.add(word)
+
+    domain_terms = [word for word in filtered if any(stem in word for stem in _DOMAIN_STEMS)]
+    other_terms = [word for word in filtered if word not in domain_terms]
+    key_terms = tuple((domain_terms + other_terms)[:8])
+
+    if long_question and key_terms:
+        search_query = " ".join(key_terms[:3])
+    else:
+        search_query = normalized
+    return QueryRewrite(normalized_query=normalized, search_query=search_query, key_terms=key_terms)
+
+
+def _rerank_score(
+    *,
+    fused_score: float,
+    candidate: SearchHit | SemanticSearchHit,
+    query_terms: set[str],
+    key_terms: set[str],
+) -> float:
+    haystack = " ".join(part for part in (candidate.title or "", candidate.chapter or "", candidate.excerpt) if part).casefold()
+    haystack_terms = {token for token in _WORD_RE.findall(haystack) if token and token not in _RU_STOPWORDS}
+    if not haystack_terms:
+        return fused_score
+
+    query_overlap = len(query_terms & haystack_terms) / max(1, len(query_terms))
+    key_overlap = len(key_terms & haystack_terms) / max(1, len(key_terms)) if key_terms else 0.0
+    return fused_score + (0.2 * query_overlap) + (0.25 * key_overlap)
+
+
+def build_llm_context(
+    results: list[HybridSearchHit],
+    *,
+    max_context_chars: int,
+    max_chunks: int = 8,
+    max_per_source: int = 2,
+) -> list[HybridSearchHit]:
+    """Select hybrid chunks for LLM context with source diversity and size limit."""
+    if max_context_chars <= 0 or max_chunks <= 0:
+        return []
+
+    buckets: dict[str, list[HybridSearchHit]] = {}
+    source_order: list[str] = []
+    for hit in results:
+        source_key = _normalized_source_path(hit.source_path)
+        if source_key not in buckets:
+            buckets[source_key] = []
+            source_order.append(source_key)
+        if len(buckets[source_key]) < max_per_source:
+            buckets[source_key].append(hit)
+
+    selected: list[HybridSearchHit] = []
+    used_chars = 0
+    for round_no in range(max_per_source):
+        for source_key in source_order:
+            source_hits = buckets[source_key]
+            if round_no >= len(source_hits):
+                continue
+            candidate = source_hits[round_no]
+            candidate_size = len(candidate.excerpt.strip()) + 140
+            if selected and used_chars + candidate_size > max_context_chars:
+                return selected
+            selected.append(candidate)
+            used_chars += candidate_size
+            if len(selected) >= max_chunks:
+                return selected
+    return selected
+
+
 class HybridQueryService:
     """Merges keyword and semantic candidates into one ranked hybrid list."""
 
@@ -186,7 +339,8 @@ class HybridQueryService:
         phrase_mode: bool = False,
         candidate_limit: int = 64,
     ) -> list[HybridSearchHit]:
-        query_text = query.strip()
+        rewritten = _rewrite_query(query)
+        query_text = rewritten.normalized_query
         if not query_text:
             return []
         safe_limit = max(1, min(limit, 100))
@@ -194,14 +348,14 @@ class HybridQueryService:
 
         text_hits = search_chunks(
             self._search_repository.connection,
-            query=query_text,
+            query=rewritten.search_query,
             limit=branch_limit,
             phrase_mode=phrase_mode,
             author_filter=author_filter,
             format_filter=format_filter,
         )
         semantic_hits = self._semantic_searcher.search(
-            query=query_text,
+            query=rewritten.search_query,
             limit=branch_limit,
             author_filter=author_filter,
             format_filter=format_filter,
@@ -243,9 +397,23 @@ class HybridQueryService:
             )
 
         ordered_ids = order_fused_scores(fused, tie_breakers=tie_breakers)
+        query_terms = {term.casefold() for term in _WORD_RE.findall(query_text) if term and term not in _RU_STOPWORDS}
+        key_terms = set(rewritten.key_terms)
+        reranked = sorted(
+            ordered_ids,
+            key=lambda chunk_id: (
+                -_rerank_score(
+                    fused_score=float(fused[chunk_id]),
+                    candidate=text_by_id.get(chunk_id) or semantic_by_id[chunk_id],
+                    query_terms=query_terms,
+                    key_terms=key_terms,
+                ),
+                tie_breakers.get(chunk_id, ()),
+            ),
+        )
 
         results: list[HybridSearchHit] = []
-        for chunk_id in ordered_ids:
+        for chunk_id in reranked:
             keyword_hit = text_by_id.get(chunk_id)
             semantic_hit = semantic_by_id.get(chunk_id)
             base = keyword_hit or semantic_hit

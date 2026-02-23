@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sys
 
+from librar.hybrid.query import HybridSearchHit, build_llm_context
 from librar.semantic.config import SemanticSettings
 from librar.semantic.openrouter import OpenRouterGenerator
 
@@ -137,6 +138,42 @@ def _format_location(result: SearchResult) -> str:
     if result.page is not None:
         return f"стр. {result.page}"
     return f"позиция {max(result.chunk_no, 0) + 1}"
+
+
+def _select_context_results(
+    results: tuple[SearchResult, ...],
+    *,
+    max_context_chars: int,
+    max_chunks: int,
+) -> tuple[SearchResult, ...]:
+    hybrid_hits = [
+        HybridSearchHit(
+            source_path=result.source_path,
+            title=result.title,
+            author=result.author,
+            format_name=result.format_name,
+            chunk_id=result.chunk_id,
+            chunk_no=result.chunk_no,
+            page=result.page,
+            chapter=result.chapter,
+            item_id=None,
+            char_start=None,
+            char_end=None,
+            excerpt=result.excerpt,
+            keyword_rank=None,
+            semantic_score=result.hybrid_score,
+            hybrid_score=float(result.hybrid_score or 0.0),
+            display=result.display,
+        )
+        for result in results
+    ]
+    selected_hits = build_llm_context(
+        hybrid_hits,
+        max_context_chars=max_context_chars,
+        max_chunks=max_chunks,
+    )
+    selected_ids = {hit.chunk_id for hit in selected_hits}
+    return tuple(result for result in results if result.chunk_id in selected_ids)
 
 
 def _build_prompt(
@@ -268,7 +305,7 @@ async def answer_question(
             prompt="",
         )
 
-    selected = response.results[:top_k]
+    selected = _select_context_results(response.results[:top_k], max_context_chars=max_context_chars, max_chunks=top_k)
     if not _has_sufficient_relevance(selected):
         return AnswerResult(
             answer=INSUFFICIENT_DATA_ANSWER,

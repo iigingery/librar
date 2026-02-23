@@ -294,3 +294,70 @@ def test_answer_question_returns_template_when_too_few_scored_chunks(monkeypatch
     assert result.is_confirmed is False
     assert result.sources == ()
     assert result.answer == INSUFFICIENT_DATA_ANSWER
+
+
+def test_answer_question_builds_diverse_context_for_llm(monkeypatch) -> None:
+    search_results = (
+        SearchResult(
+            source_path="books/a.pdf",
+            chunk_id=1,
+            chunk_no=0,
+            display="A1",
+            excerpt="Фрагмент про внимание.",
+            title="Книга A",
+            author="Автор A",
+            page=1,
+            hybrid_score=0.95,
+        ),
+        SearchResult(
+            source_path="books/a.pdf",
+            chunk_id=2,
+            chunk_no=1,
+            display="A2",
+            excerpt="Еще один длинный фрагмент про внимание и практику.",
+            title="Книга A",
+            author="Автор A",
+            page=2,
+            hybrid_score=0.9,
+        ),
+        SearchResult(
+            source_path="books/b.pdf",
+            chunk_id=3,
+            chunk_no=0,
+            display="B1",
+            excerpt="Фрагмент из другой книги про наблюдение за мыслями.",
+            title="Книга B",
+            author="Автор B",
+            page=3,
+            hybrid_score=0.85,
+        ),
+    )
+
+    async def _fake_search_hybrid_cli(**kwargs: Any):
+        del kwargs
+        return SimpleNamespace(results=search_results, error=None, timed_out=False)
+
+    monkeypatch.setattr("librar.bot.search_service.search_hybrid_cli", _fake_search_hybrid_cli)
+    monkeypatch.setattr(
+        "librar.bot.search_service.SemanticSettings.from_env",
+        lambda: SimpleNamespace(api_key="k", model="embed-model", base_url="https://openrouter.ai/api/v1"),
+    )
+
+    generator = _DummyGenerator("Ответ [1]")
+    result = asyncio.run(
+        answer_question(
+            query="Где описана практика внимания?",
+            db_path=".librar-search.db",
+            index_path=".librar-semantic.faiss",
+            top_k=3,
+            max_context_chars=430,
+            chat_model="openai/gpt-4o-mini",
+            generator=generator,
+        )
+    )
+
+    assert result.is_confirmed is True
+    prompt = generator.calls[0]["prompt"]
+    assert "source_path=books/a.pdf" in prompt
+    assert "source_path=books/b.pdf" in prompt
+    assert prompt.count("source_path=books/a.pdf") <= 1
