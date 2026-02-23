@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+import signal
 import sys
 
 from dotenv import load_dotenv
@@ -77,22 +78,20 @@ async def run_bot(settings: BotSettings) -> None:
     """Run bot with polling and graceful shutdown."""
     application = build_application(settings)
     watcher: BookFolderWatcher | None = None
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
 
-    # Initialize application
-    await application.initialize()
-    logger.info("Bot initialized. Starting polling...")
+    def _request_stop() -> None:
+        stop_event.set()
 
-    # Start polling with explicit allowed updates
-    await application.start()
-    updater = application.updater
-    if updater is None:
-        raise RuntimeError("Bot updater is not initialized")
-
-    await updater.start_polling(
-        allowed_updates=["message", "inline_query", "callback_query"]
-    )
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _request_stop)
+        except NotImplementedError:
+            signal.signal(sig, lambda _sig, _frame: loop.call_soon_threadsafe(_request_stop))
 
     watch_dir = Path(os.environ.get("LIBRAR_WATCH_DIR", "books"))
+    updater = None
 
     async def _on_new_book(file_path: Path) -> None:
         logger.info("Watcher detected new book: %s", file_path)
@@ -115,39 +114,49 @@ async def run_bot(settings: BotSettings) -> None:
             return
         logger.error("Watcher ingestion failed for %s: %s", file_path.name, result.error)
 
-    if watch_dir.exists() and watch_dir.is_dir():
-        watcher = BookFolderWatcher(watch_dir=watch_dir, callback=_on_new_book)
-        await watcher.start()
-        logger.info("Folder watcher started for %s", watch_dir)
-    else:
-        logger.warning("Watch directory does not exist, watcher disabled: %s", watch_dir)
-
-    logger.info("Bot polling started. Press Ctrl+C to stop.")
-
-    # Wait for stop signal
     try:
-        # Keep running until interrupted
-        await asyncio.Event().wait()
-    except (KeyboardInterrupt, SystemExit):
+        # Initialize application
+        await application.initialize()
+        logger.info("Bot initialized. Starting polling...")
+
+        # Start polling with explicit allowed updates
+        await application.start()
+        updater = application.updater
+        if updater is None:
+            raise RuntimeError("Bot updater is not initialized")
+
+        await updater.start_polling(
+            allowed_updates=["message", "inline_query", "callback_query"]
+        )
+
+        if watch_dir.exists() and watch_dir.is_dir():
+            watcher = BookFolderWatcher(watch_dir=watch_dir, callback=_on_new_book)
+            await watcher.start()
+            logger.info("Folder watcher started for %s", watch_dir)
+        else:
+            logger.warning("Watch directory does not exist, watcher disabled: %s", watch_dir)
+
+        logger.info("Bot polling started. Press Ctrl+C to stop.")
+        await stop_event.wait()
         logger.info("Received stop signal. Shutting down...")
+    finally:
+        if updater is not None:
+            await updater.stop()
 
-    # Graceful shutdown
-    await updater.stop()
+        if watcher is not None:
+            try:
+                watcher.stop()
+                logger.info("Folder watcher stopped cleanly.")
+            except Exception:
+                logger.exception("Failed to stop folder watcher cleanly")
 
-    if watcher is not None:
-        try:
-            watcher.stop()
-            logger.info("Folder watcher stopped cleanly.")
-        except Exception:
-            logger.exception("Failed to stop folder watcher cleanly")
+        await application.stop()
+        await application.shutdown()
 
-    await application.stop()
-    await application.shutdown()
-
-    # Close repository connection
-    repository = application.bot_data.get("repository")
-    if isinstance(repository, BotRepository):
-        repository.close()
+        # Close repository connection
+        repository = application.bot_data.get("repository")
+        if isinstance(repository, BotRepository):
+            repository.close()
 
     logger.info("Bot stopped cleanly.")
 
