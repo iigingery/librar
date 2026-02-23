@@ -12,6 +12,13 @@ from librar.search.schema import apply_runtime_pragmas, ensure_schema
 DEFAULT_EXCERPT_SIZE = 200
 MIN_EXCERPT_SIZE = 50
 MAX_EXCERPT_SIZE = 500
+DEFAULT_DIALOG_HISTORY_LIMIT = 20
+
+
+@dataclass(slots=True)
+class DialogMessage:
+    role: str
+    content: str
 
 
 @dataclass(slots=True)
@@ -40,6 +47,24 @@ class BotRepository:
         self._connection.row_factory = sqlite3.Row
         apply_runtime_pragmas(self._connection)
         ensure_schema(self._connection)
+        self._ensure_bot_schema()
+
+    def _ensure_bot_schema(self) -> None:
+        self._connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS dialog_history (
+                id INTEGER PRIMARY KEY,
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_dialog_history_chat_user_id
+            ON dialog_history(chat_id, user_id, id);
+            """
+        )
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -108,3 +133,78 @@ class BotRepository:
             for row in rows
         ]
         return BookListPage(items=items, total=total, limit=limit, offset=offset)
+
+    def save_dialog_message(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+        role: str,
+        content: str,
+        limit: int = DEFAULT_DIALOG_HISTORY_LIMIT,
+    ) -> None:
+        if role not in {"user", "assistant"}:
+            raise ValueError("role must be either 'user' or 'assistant'")
+        if limit < 1:
+            raise ValueError("limit must be positive")
+
+        normalized = content.strip()
+        if not normalized:
+            return
+
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO dialog_history (chat_id, user_id, role, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                (chat_id, user_id, role, normalized),
+            )
+            self._connection.execute(
+                """
+                DELETE FROM dialog_history
+                WHERE chat_id = ?
+                  AND user_id = ?
+                  AND id NOT IN (
+                      SELECT id FROM dialog_history
+                      WHERE chat_id = ? AND user_id = ?
+                      ORDER BY id DESC
+                      LIMIT ?
+                  )
+                """,
+                (chat_id, user_id, chat_id, user_id, limit),
+            )
+
+    def get_dialog_history(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+        limit: int = DEFAULT_DIALOG_HISTORY_LIMIT,
+    ) -> tuple[DialogMessage, ...]:
+        if limit < 1:
+            raise ValueError("limit must be positive")
+
+        rows = self._connection.execute(
+            """
+            SELECT role, content
+            FROM dialog_history
+            WHERE chat_id = ? AND user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (chat_id, user_id, limit),
+        ).fetchall()
+
+        return tuple(
+            DialogMessage(role=row["role"], content=row["content"])
+            for row in reversed(rows)
+        )
+
+    def clear_dialog_history(self, *, chat_id: int, user_id: int) -> int:
+        with self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM dialog_history WHERE chat_id = ? AND user_id = ?",
+                (chat_id, user_id),
+            )
+        return int(cursor.rowcount)

@@ -139,7 +139,13 @@ def _format_location(result: SearchResult) -> str:
     return f"позиция {max(result.chunk_no, 0) + 1}"
 
 
-def _build_prompt(*, query: str, results: tuple[SearchResult, ...], max_context_chars: int) -> str:
+def _build_prompt(
+    *,
+    query: str,
+    results: tuple[SearchResult, ...],
+    max_context_chars: int,
+    history: tuple[tuple[str, str], ...] = (),
+) -> str:
     fragments: list[str] = []
     current_len = 0
     for idx, result in enumerate(results, 1):
@@ -157,11 +163,18 @@ def _build_prompt(*, query: str, results: tuple[SearchResult, ...], max_context_
         current_len += len(fragment)
 
     context_block = "\n\n".join(fragments)
+    history_block = "\n".join(
+        f"- {role}: {message}"
+        for role, message in history[-5:]
+        if message.strip()
+    )
+    history_section = f"История диалога (последние релевантные реплики):\n{history_block}\n\n" if history_block else ""
     return (
         "Системная инструкция:\n"
         "Ты помощник библиотечного бота. Отвечай только на основе контекста ниже и никогда не используй внешние знания. "
         "Если контекста недостаточно, прямо напиши: 'Недостаточно данных в источниках'. "
         "Каждое утверждение подтверждай ссылками на фрагменты в формате [n].\n\n"
+        f"{history_section}"
         f"Вопрос пользователя: {query}\n\n"
         f"Контекст:\n{context_block}"
     )
@@ -238,6 +251,7 @@ async def answer_question(
     max_tokens: int = DEFAULT_GENERATION_MAX_TOKENS,
     timeout_seconds: float = DEFAULT_SEARCH_TIMEOUT_SECONDS,
     generator: OpenRouterGenerator | None = None,
+    history: tuple[tuple[str, str], ...] = (),
 ) -> AnswerResult:
     response = await search_hybrid_cli(
         query=query,
@@ -263,7 +277,7 @@ async def answer_question(
             prompt="",
         )
 
-    prompt = _build_prompt(query=query, results=selected, max_context_chars=max_context_chars)
+    prompt = _build_prompt(query=query, results=selected, max_context_chars=max_context_chars, history=history)
     semantic_settings = SemanticSettings.from_env()
     rag_generator = generator or OpenRouterGenerator(semantic_settings)
 

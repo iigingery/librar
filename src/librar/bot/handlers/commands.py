@@ -5,7 +5,7 @@ from __future__ import annotations
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes
 
-from librar.bot.repository import BotRepository
+from librar.bot.repository import BotRepository, DEFAULT_DIALOG_HISTORY_LIMIT
 from librar.bot.search_service import AnswerSource, answer_question, search_hybrid_cli
 
 
@@ -95,7 +95,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "• @botname <запрос> — встроенный поиск в любом чате (inline mode)\n"
         "• /books — список всех книг в библиотеке\n"
         "• /settings — настройки размера отрывков\n"
-        "• /help — справка по командам\n\n"
+        "• /help — справка по командам\n"
+        "• /reset_context — очистить историю диалога\n\n"
         "Попробуйте: /search русская литература"
     )
     await update.message.reply_text(text)
@@ -116,7 +117,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "  Пример: /ask Кто автор книги?\n\n"
         "/books — показать все книги с метаданными\n"
         "  Навигация: кнопки Предыдущая/Следующая\n\n"
-        "/settings — изменить размер отрывков (50-500 символов)\n\n"
+        "/settings — изменить размер отрывков (50-500 символов)\n"
+        "/reset_context — очистить историю диалога с ботом\n\n"
         "Inline mode:\n"
         "  В любом чате наберите @botname <запрос>\n"
         "  Выберите результат из списка\n\n"
@@ -203,11 +205,25 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Использование: /ask <вопрос>\n\nПример: /ask Кто автор книги?")
         return
 
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat is None or user is None:
+        await update.message.reply_text("Не удалось определить чат или пользователя.")
+        return
+
+    repository = _resolve_repository(context)
     db_path = _resolve_db_path(context)
     index_path = _resolve_index_path(context)
     chat_model = _resolve_chat_model(context)
     top_k = _resolve_rag_top_k(context)
     max_context_chars = _resolve_rag_max_context_chars(context)
+
+    history_rows = repository.get_dialog_history(
+        chat_id=int(chat.id),
+        user_id=int(user.id),
+        limit=DEFAULT_DIALOG_HISTORY_LIMIT,
+    )
+    history = tuple((row.role, row.content) for row in history_rows[-5:])
 
     answer_result = await answer_question(
         query=query,
@@ -216,6 +232,22 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         top_k=top_k,
         max_context_chars=max_context_chars,
         chat_model=chat_model,
+        history=history,
+    )
+
+    repository.save_dialog_message(
+        chat_id=int(chat.id),
+        user_id=int(user.id),
+        role="user",
+        content=query,
+        limit=DEFAULT_DIALOG_HISTORY_LIMIT,
+    )
+    repository.save_dialog_message(
+        chat_id=int(chat.id),
+        user_id=int(user.id),
+        role="assistant",
+        content=answer_result.answer,
+        limit=DEFAULT_DIALOG_HISTORY_LIMIT,
     )
 
     formatted_answer = _format_answer_message(
@@ -224,6 +256,23 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         confirmed=answer_result.is_confirmed,
     )
     await update.message.reply_text(formatted_answer)
+
+
+async def reset_context_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /reset_context command by clearing per-user dialog memory."""
+    if update.message is None:
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat is None or user is None:
+        await update.message.reply_text("Не удалось определить чат или пользователя.")
+        return
+
+    repository = _resolve_repository(context)
+    removed = repository.clear_dialog_history(chat_id=int(chat.id), user_id=int(user.id))
+    suffix = f" Удалено сообщений: {removed}." if removed else ""
+    await update.message.reply_text(f"История диалога очищена.{suffix}")
 
 
 async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -268,4 +317,5 @@ def build_command_handlers() -> list[CommandHandler]:
         CommandHandler("search", search_command),
         CommandHandler("ask", ask_command),
         CommandHandler("books", books_command),
+        CommandHandler("reset_context", reset_context_command),
     ]
