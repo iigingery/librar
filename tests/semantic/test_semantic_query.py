@@ -134,6 +134,13 @@ def test_semantic_query_returns_ranked_chunk_results(tmp_path: Path) -> None:
 
         assert len(hits) == 2
         assert hits[0].source_path == "book-a.txt"
+        assert hits[0].chunk_id == chunk_a
+        assert hits[1].chunk_id == chunk_b
+        assert hits[0].chunk_no == 0
+        assert hits[0].page == 1
+        assert hits[0].chapter == "ch-1"
+        assert hits[0].char_start == 0
+        assert hits[0].char_end == len("Развитие души происходит через практику и служение.")
         assert hits[0].score >= hits[1].score
         assert "Развитие души" in hits[0].excerpt
         assert hits[0].title == "book-a.txt"
