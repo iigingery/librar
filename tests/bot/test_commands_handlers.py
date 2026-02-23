@@ -211,3 +211,59 @@ def test_books_command_handles_empty_library(tmp_path: Path) -> None:
     assert len(message.replies) == 1
     reply_text = message.replies[0]["text"]
     assert "пуста" in reply_text.lower()
+
+
+def test_search_command_handles_missing_configuration(tmp_path: Path) -> None:
+    db_path = tmp_path / "search.db"
+
+    with BotRepository(db_path) as repository:
+        message = DummyMessage()
+        update = SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=123),
+            effective_chat=SimpleNamespace(id=555),
+        )
+        ctx = _context(repository)
+        ctx.args = ["test"]
+        del ctx.bot_data["db_path"]
+
+        asyncio.run(search_command(update, ctx))
+
+    assert "временно недоступен" in message.replies[-1]["text"].lower()
+
+
+def test_ask_command_handles_missing_configuration(tmp_path: Path) -> None:
+    db_path = tmp_path / "search.db"
+
+    with BotRepository(db_path) as repository:
+        message = DummyMessage()
+        update = SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=123),
+            effective_chat=SimpleNamespace(id=777),
+        )
+        ctx = _context(repository)
+        ctx.args = ["Кто", "автор?"]
+        del ctx.bot_data["openrouter_chat_model"]
+
+        asyncio.run(ask_command(update, ctx))
+
+    assert "временно недоступен" in message.replies[-1]["text"].lower()
+
+
+def test_books_command_handles_missing_configuration(tmp_path: Path) -> None:
+    db_path = tmp_path / "search.db"
+
+    with BotRepository(db_path) as repository:
+        message = DummyMessage()
+        update = SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=123),
+            effective_chat=SimpleNamespace(id=555),
+        )
+        ctx = _context(repository)
+        del ctx.bot_data["page_size"]
+
+        asyncio.run(books_command(update, ctx))
+
+    assert "временно недоступен" in message.replies[-1]["text"].lower()

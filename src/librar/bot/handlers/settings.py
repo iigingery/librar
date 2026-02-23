@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     CallbackQueryHandler,
@@ -12,32 +14,27 @@ from telegram.ext import (
     filters,
 )
 
-from librar.bot.repository import (
-    BotRepository,
-    DEFAULT_EXCERPT_SIZE,
-    MAX_EXCERPT_SIZE,
-    MIN_EXCERPT_SIZE,
-)
+from librar.bot.handlers.config import ConfigError, resolve_repository
+from librar.bot.repository import DEFAULT_EXCERPT_SIZE, MAX_EXCERPT_SIZE, MIN_EXCERPT_SIZE
 
+
+logger = logging.getLogger(__name__)
 
 SETTINGS_SELECT, SETTINGS_ENTER_EXCERPT_SIZE = range(2)
 SETTINGS_CALLBACK_EXCERPT_SIZE = "set_excerpt"
 
 
-def _resolve_repository(context: ContextTypes.DEFAULT_TYPE) -> BotRepository:
-    repository = context.bot_data.get("repository")
-    if repository is None:
-        raise RuntimeError("Bot repository missing from context.bot_data['repository']")
-    if not isinstance(repository, BotRepository):
-        raise TypeError("context.bot_data['repository'] must be a BotRepository")
-    return repository
-
-
 async def settings_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message is None:
-        raise RuntimeError("/settings requires a message update")
+        logger.warning("/settings skipped: missing message update")
+        return ConversationHandler.END
 
-    repository = _resolve_repository(context)
+    try:
+        repository = resolve_repository(context)
+    except ConfigError as error:
+        logger.error("/settings failed due to configuration error: %s", error)
+        await update.message.reply_text("Настройки временно недоступны. Попробуйте позже.")
+        return ConversationHandler.END
     user = update.effective_user
     current_size = DEFAULT_EXCERPT_SIZE if user is None else repository.get_excerpt_size(int(user.id))
 
@@ -59,7 +56,8 @@ async def settings_choose_excerpt_size(update: Update, context: ContextTypes.DEF
     del context
     query = update.callback_query
     if query is None:
-        raise RuntimeError("settings callback requires callback_query update")
+        logger.warning("settings_choose_excerpt_size skipped: missing callback_query update")
+        return ConversationHandler.END
 
     await query.answer()
     await query.edit_message_text(
@@ -73,9 +71,15 @@ async def settings_choose_excerpt_size(update: Update, context: ContextTypes.DEF
 
 async def settings_save_excerpt_size(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message is None:
-        raise RuntimeError("excerpt-size input requires a message update")
+        logger.warning("settings_save_excerpt_size skipped: missing message update")
+        return ConversationHandler.END
 
-    repository = _resolve_repository(context)
+    try:
+        repository = resolve_repository(context)
+    except ConfigError as error:
+        logger.error("settings_save_excerpt_size failed due to configuration error: %s", error)
+        await update.message.reply_text("Не удалось сохранить настройку. Попробуйте позже.")
+        return ConversationHandler.END
     user = update.effective_user
     text = (update.message.text or "").strip()
 
@@ -111,7 +115,8 @@ async def settings_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.callback_query.edit_message_text("Настройки не изменены.")
     else:
         if update.message is None:
-            raise RuntimeError("cancel requires message or callback_query update")
+            logger.warning("settings_cancel skipped: missing message and callback_query updates")
+            return ConversationHandler.END
         await update.message.reply_text("Настройки не изменены.")
     return ConversationHandler.END
 

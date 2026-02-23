@@ -322,3 +322,23 @@ def test_books_page_callback_handles_invalid_page(tmp_path: Path) -> None:
     assert len(callback.edited_messages) == 1
     text = callback.edited_messages[0]["text"]
     assert "не существует" in text.lower()
+
+
+def test_inline_handler_handles_missing_configuration(tmp_path: Path) -> None:
+    db_path = tmp_path / "search.db"
+
+    with BotRepository(db_path) as repository:
+        inline_query = DummyInlineQuery("test query")
+        update = SimpleNamespace(
+            inline_query=inline_query,
+            effective_user=SimpleNamespace(id=123),
+        )
+        ctx = _context(repository)
+        del ctx.bot_data["index_path"]
+
+        asyncio.run(inline_query_handler(update, ctx))
+
+    assert len(inline_query.answers) == 1
+    results = inline_query.answers[0]
+    assert len(results) == 1
+    assert "недоступ" in results[0].title.lower()

@@ -2,51 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+
 from telegram import InlineQueryResultArticle, InputTextMessageContent, Update
 from telegram.ext import ContextTypes, InlineQueryHandler
 
-from librar.bot.repository import BotRepository
+from librar.bot.handlers.config import ConfigError, resolve_repository, resolve_required
 from librar.bot.search_service import search_hybrid_cli
 
 
+logger = logging.getLogger(__name__)
+
 INLINE_MAX_RESULTS = 50
-
-
-def _resolve_repository(context: ContextTypes.DEFAULT_TYPE) -> BotRepository:
-    repository = context.bot_data.get("repository")
-    if repository is None:
-        raise RuntimeError("Bot repository missing from context.bot_data['repository']")
-    if not isinstance(repository, BotRepository):
-        raise TypeError("context.bot_data['repository'] must be a BotRepository")
-    return repository
-
-
-def _resolve_db_path(context: ContextTypes.DEFAULT_TYPE) -> str:
-    db_path = context.bot_data.get("db_path")
-    if db_path is None:
-        raise RuntimeError("db_path missing from context.bot_data['db_path']")
-    return str(db_path)
-
-
-def _resolve_index_path(context: ContextTypes.DEFAULT_TYPE) -> str:
-    index_path = context.bot_data.get("index_path")
-    if index_path is None:
-        raise RuntimeError("index_path missing from context.bot_data['index_path']")
-    return str(index_path)
-
-
-def _resolve_inline_result_limit(context: ContextTypes.DEFAULT_TYPE) -> int:
-    limit = context.bot_data.get("inline_result_limit")
-    if limit is None:
-        raise RuntimeError("inline_result_limit missing from context.bot_data['inline_result_limit']")
-    return int(limit)
-
-
-def _resolve_inline_timeout(context: ContextTypes.DEFAULT_TYPE) -> float:
-    timeout = context.bot_data.get("inline_timeout_seconds")
-    if timeout is None:
-        raise RuntimeError("inline_timeout_seconds missing from context.bot_data['inline_timeout_seconds']")
-    return float(timeout)
 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -62,11 +29,24 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.inline_query.answer([])
         return
 
-    repository = _resolve_repository(context)
-    db_path = _resolve_db_path(context)
-    index_path = _resolve_index_path(context)
-    limit = _resolve_inline_result_limit(context)
-    timeout = _resolve_inline_timeout(context)
+    try:
+        repository = resolve_repository(context)
+        db_path = str(resolve_required(context, "db_path"))
+        index_path = str(resolve_required(context, "index_path"))
+        limit = int(resolve_required(context, "inline_result_limit"))
+        timeout = float(resolve_required(context, "inline_timeout_seconds"))
+    except ConfigError as error:
+        logger.error("Inline query failed due to configuration error: %s", error)
+        error_article = InlineQueryResultArticle(
+            id="config_error",
+            title="Сервис временно недоступен",
+            description="Параметры поиска не настроены",
+            input_message_content=InputTextMessageContent(
+                message_text="⚠️ Сервис поиска временно недоступен. Попробуйте позже."
+            ),
+        )
+        await update.inline_query.answer([error_article], cache_time=0)
+        return
 
     # Get user excerpt size for descriptions
     excerpt_size = 100  # Default for inline
