@@ -133,6 +133,7 @@ async def run_ingestion_pipeline(
     *,
     db_path: str,
     index_path: str,
+    books_path: str,
     cache_file: str,
 ) -> IngestionPipelineResult:
     ingest_ok, ingest_stdout, ingest_error = await _run_cli_command(
@@ -166,6 +167,8 @@ async def run_ingestion_pipeline(
         "librar.cli.index_books",
         "--db-path",
         db_path,
+        "--books-path",
+        books_path,
     )
     if not index_ok:
         return IngestionPipelineResult(

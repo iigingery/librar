@@ -17,7 +17,7 @@ def _build_update_context(document: Any) -> tuple[SimpleNamespace, SimpleNamespa
     status_message = SimpleNamespace(edit_text=AsyncMock())
     message = SimpleNamespace(document=document, reply_text=AsyncMock(return_value=status_message))
     update = SimpleNamespace(message=message)
-    context = SimpleNamespace(bot_data={"db_path": "test.db", "index_path": "test.faiss"})
+    context = SimpleNamespace(bot_data={"db_path": "test.db", "index_path": "test.faiss", "books_path": "books"})
     return update, context, message, status_message
 
 
@@ -55,6 +55,7 @@ async def test_upload_success_flow_shows_book_details(monkeypatch: pytest.Monkey
     async def fake_pipeline(file_path: Path, **kwargs: Any) -> IngestionPipelineResult:
         assert kwargs["db_path"] == "test.db"
         assert kwargs["index_path"] == "test.faiss"
+        assert kwargs["books_path"] == "books"
         assert kwargs["cache_file"] == ".librar-ingestion-cache.json"
         assert file_path == Path("books") / "book.epub"
         return IngestionPipelineResult(

@@ -147,6 +147,7 @@ def test_run_ingestion_pipeline_success(monkeypatch) -> None:
             Path("books/new-book.pdf"),
             db_path=".librar-search.db",
             index_path=".librar-semantic.faiss",
+            books_path="books",
             cache_file=".librar-ingestion-cache.json",
         )
     )
@@ -176,6 +177,7 @@ def test_run_ingestion_pipeline_failure_returns_error(monkeypatch) -> None:
             Path("books/new-book.pdf"),
             db_path=".librar-search.db",
             index_path=".librar-semantic.faiss",
+            books_path="books",
             cache_file=".librar-ingestion-cache.json",
         )
     )

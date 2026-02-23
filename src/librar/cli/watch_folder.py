@@ -44,6 +44,7 @@ async def _run_watcher(args: argparse.Namespace) -> int:
             file_path,
             db_path=args.db_path,
             index_path=args.index_path,
+            books_path=args.watch_dir,
             cache_file=args.cache_file,
         )
         if result.success:

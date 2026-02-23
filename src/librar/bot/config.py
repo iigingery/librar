@@ -10,6 +10,7 @@ from typing import Mapping
 
 DEFAULT_DB_PATH = ".librar-search.db"
 DEFAULT_INDEX_PATH = ".librar-semantic.faiss"
+DEFAULT_WATCH_DIR = "books"
 DEFAULT_INLINE_TIMEOUT_SECONDS = 25.0
 DEFAULT_INLINE_RESULT_LIMIT = 20
 DEFAULT_COMMAND_RESULT_LIMIT = 10
@@ -40,6 +41,7 @@ class BotSettings:
     token: str
     db_path: Path
     index_path: Path
+    watch_dir: Path
     inline_timeout_seconds: float = DEFAULT_INLINE_TIMEOUT_SECONDS
     inline_result_limit: int = DEFAULT_INLINE_RESULT_LIMIT
     command_result_limit: int = DEFAULT_COMMAND_RESULT_LIMIT
@@ -63,6 +65,10 @@ class BotSettings:
         index_path_raw = source.get("LIBRAR_INDEX_PATH", DEFAULT_INDEX_PATH).strip()
         if not index_path_raw:
             raise ValueError("LIBRAR_INDEX_PATH cannot be empty")
+
+        watch_dir_raw = source.get("LIBRAR_WATCH_DIR", DEFAULT_WATCH_DIR).strip()
+        if not watch_dir_raw:
+            raise ValueError("LIBRAR_WATCH_DIR cannot be empty")
 
         timeout_raw = source.get("TELEGRAM_INLINE_TIMEOUT_SECONDS", str(DEFAULT_INLINE_TIMEOUT_SECONDS)).strip()
         inline_limit_raw = source.get("TELEGRAM_INLINE_RESULT_LIMIT", str(DEFAULT_INLINE_RESULT_LIMIT)).strip()
@@ -122,6 +128,7 @@ class BotSettings:
             token=token,
             db_path=Path(db_path_raw),
             index_path=Path(index_path_raw),
+            watch_dir=Path(watch_dir_raw),
             inline_timeout_seconds=inline_timeout_seconds,
             inline_result_limit=inline_result_limit,
             command_result_limit=command_result_limit,

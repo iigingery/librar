@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 import signal
 import sys
@@ -51,6 +50,7 @@ def build_application(settings: BotSettings) -> Application:
     application.bot_data["openrouter_chat_model"] = settings.openrouter_chat_model
     application.bot_data["rag_top_k"] = settings.rag_top_k
     application.bot_data["rag_max_context_chars"] = settings.rag_max_context_chars
+    application.bot_data["books_path"] = str(settings.watch_dir)
 
     # Register all handlers in correct order
     # 1. Settings conversation (highest priority for /settings command)
@@ -90,7 +90,7 @@ async def run_bot(settings: BotSettings) -> None:
         except NotImplementedError:
             signal.signal(sig, lambda _sig, _frame: loop.call_soon_threadsafe(_request_stop))
 
-    watch_dir = Path(os.environ.get("LIBRAR_WATCH_DIR", "books"))
+    watch_dir = settings.watch_dir
     updater = None
 
     async def _on_new_book(file_path: Path) -> None:
@@ -99,6 +99,7 @@ async def run_bot(settings: BotSettings) -> None:
             file_path,
             db_path=str(settings.db_path),
             index_path=str(settings.index_path),
+            books_path=str(watch_dir),
             cache_file=".librar-ingestion-cache.json",
         )
         if result.is_duplicate:
