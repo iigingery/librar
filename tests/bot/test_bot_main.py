@@ -27,6 +27,7 @@ def mock_settings(tmp_path: Path) -> BotSettings:
         token="test_bot_token_12345",
         db_path=tmp_path / "test.db",
         index_path=tmp_path / "test.faiss",
+        watch_dir=tmp_path / "books",
         inline_timeout_seconds=25.0,
         inline_result_limit=20,
         command_result_limit=10,
@@ -73,6 +74,7 @@ def test_build_application_stores_dependencies_in_bot_data(mock_settings: BotSet
 
     assert app.bot_data["db_path"] == str(mock_settings.db_path)
     assert app.bot_data["index_path"] == str(mock_settings.index_path)
+    assert app.bot_data["books_path"] == str(mock_settings.watch_dir)
     assert app.bot_data["inline_timeout_seconds"] == mock_settings.inline_timeout_seconds
     assert app.bot_data["inline_result_limit"] == mock_settings.inline_result_limit
     assert app.bot_data["command_result_limit"] == mock_settings.command_result_limit
@@ -115,6 +117,7 @@ def test_bot_settings_from_env_uses_defaults_for_optional_config() -> None:
     assert settings.token == "valid_token_123"
     assert settings.db_path == Path(".librar-search.db")
     assert settings.index_path == Path(".librar-semantic.faiss")
+    assert settings.watch_dir == Path("books")
     assert settings.inline_timeout_seconds == 25.0
     assert settings.inline_result_limit == 20
     assert settings.command_result_limit == 10
@@ -130,6 +133,7 @@ def test_bot_settings_from_env_parses_custom_config_values() -> None:
         "TELEGRAM_BOT_TOKEN": "custom_token",
         "LIBRAR_DB_PATH": "custom.db",
         "LIBRAR_INDEX_PATH": "custom.faiss",
+        "LIBRAR_WATCH_DIR": "custom-books",
         "TELEGRAM_INLINE_TIMEOUT_SECONDS": "30.5",
         "TELEGRAM_INLINE_RESULT_LIMIT": "50",
         "TELEGRAM_COMMAND_RESULT_LIMIT": "15",
@@ -144,6 +148,7 @@ def test_bot_settings_from_env_parses_custom_config_values() -> None:
     assert settings.token == "custom_token"
     assert settings.db_path == Path("custom.db")
     assert settings.index_path == Path("custom.faiss")
+    assert settings.watch_dir == Path("custom-books")
     assert settings.inline_timeout_seconds == 30.5
     assert settings.inline_result_limit == 50
     assert settings.command_result_limit == 15

@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 50 * 1024 * 1024
 SUPPORTED_EXTENSIONS = {".pdf", ".epub", ".fb2", ".txt"}
-BOOKS_DIR = "books"
-
-
 def _is_supported_extension(file_name: str) -> bool:
     return Path(file_name).suffix.lower() in SUPPORTED_EXTENSIONS
 
@@ -43,7 +40,8 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     status_msg = await message.reply_text("Загружаю и обрабатываю книгу...")
-    target_path = Path(BOOKS_DIR) / safe_name
+    books_path = Path(str(context.bot_data.get("books_path", "books")))
+    target_path = books_path / safe_name
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     for attempt in range(2):
@@ -58,6 +56,7 @@ async def handle_book_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 target_path,
                 db_path=str(context.bot_data["db_path"]),
                 index_path=str(context.bot_data["index_path"]),
+                books_path=str(books_path),
                 cache_file=".librar-ingestion-cache.json",
             )
 

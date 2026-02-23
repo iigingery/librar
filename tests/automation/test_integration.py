@@ -74,6 +74,7 @@ async def test_pipeline_success_calls_ingest_and_both_indexers_sequentially() ->
             Path("books/new-book.pdf"),
             db_path=".librar-search.db",
             index_path=".librar-semantic.faiss",
+            books_path="books",
             cache_file=".librar-ingestion-cache.json",
         )
 
@@ -93,6 +94,8 @@ async def test_pipeline_success_calls_ingest_and_both_indexers_sequentially() ->
     assert "librar.cli.index_books" in index_call
     assert "--db-path" in index_call
     assert ".librar-search.db" in index_call
+    assert "--books-path" in index_call
+    assert "books" in index_call
 
     semantic_call = calls[2]
     assert "librar.cli.index_semantic" in semantic_call
@@ -116,6 +119,7 @@ async def test_pipeline_duplicate_skips_indexing_commands() -> None:
             Path("books/new-book.pdf"),
             db_path=".librar-search.db",
             index_path=".librar-semantic.faiss",
+            books_path="books",
             cache_file=".librar-ingestion-cache.json",
         )
 
@@ -135,6 +139,7 @@ async def test_pipeline_failure_returns_error_message() -> None:
             Path("books/new-book.pdf"),
             db_path=".librar-search.db",
             index_path=".librar-semantic.faiss",
+            books_path="books",
             cache_file=".librar-ingestion-cache.json",
         )
 
@@ -159,6 +164,7 @@ async def test_pipeline_timeout_returns_error() -> None:
                 Path("books/new-book.pdf"),
                 db_path=".librar-search.db",
                 index_path=".librar-semantic.faiss",
+                books_path="books",
                 cache_file=".librar-ingestion-cache.json",
             )
 
