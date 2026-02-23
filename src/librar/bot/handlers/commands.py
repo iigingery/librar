@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
 
 from librar.bot.handlers.common import (
@@ -15,6 +15,11 @@ from librar.bot.handlers.common import (
     _resolve_page_size,
     _resolve_repository,
     _resolve_required,
+)
+from librar.bot.handlers.renderers import (
+    build_pagination_keyboard,
+    render_books_page,
+    render_search_page,
 )
 from librar.bot.repository import DEFAULT_DIALOG_HISTORY_LIMIT
 from librar.bot.search_service import AnswerSource, answer_question, search_hybrid_cli
@@ -192,22 +197,21 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Render first page
     total = len(response.results)
-    page_results = response.results[:page_size]
-    text = f"Найдено {total} результатов для: {query}\n\n"
+    text = render_search_page(
+        results=response.results,
+        search_query=query,
+        excerpt_size=excerpt_size,
+        page_num=0,
+        page_size=page_size,
+    )
 
-    for idx, result in enumerate(page_results, 1):
-        excerpt = result.excerpt[:excerpt_size] if len(result.excerpt) > excerpt_size else result.excerpt
-        text += f"{idx}. {result.display}\n{excerpt}...\n\n"
-
-    # Build pagination keyboard if more results exist
-    if total > page_size:
-        keyboard = [
-            [InlineKeyboardButton("Следующая →", callback_data=f"search_page_{session_key}_1")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(text)
+    reply_markup = build_pagination_keyboard(
+        prefix="search_page",
+        session_key=session_key,
+        page_num=0,
+        has_next=total > page_size,
+    )
+    await update.message.reply_text(text, reply_markup=reply_markup)
 
 
 async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -337,20 +341,15 @@ async def books_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     _cleanup_chat_sessions(book_sessions, chat_id=chat_id, active_session_key=session_key)
 
     # Render first page
-    text = f"Всего книг: {book_page.total}\n\n"
-    for item in book_page.items:
-        title = item.title or "Без названия"
-        author = item.author or "Неизвестный автор"
-        format_name = item.format_name or "?"
-        text += f"• {title} — {author} ({format_name})\n"
+    text = render_books_page(items=book_page.items, total=book_page.total)
 
-    # Build pagination keyboard if more books exist
-    if book_page.total > page_size:
-        keyboard = [[InlineKeyboardButton("Следующая →", callback_data=f"books_page_{session_key}_1")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(text)
+    reply_markup = build_pagination_keyboard(
+        prefix="books_page",
+        session_key=session_key,
+        page_num=0,
+        has_next=book_page.total > page_size,
+    )
+    await update.message.reply_text(text, reply_markup=reply_markup)
 
 
 def build_command_handlers() -> list[CommandHandler]:
