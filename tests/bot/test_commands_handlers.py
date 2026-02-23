@@ -158,9 +158,14 @@ def test_search_command_renders_results_with_pagination(tmp_path: Path, monkeypa
 
         asyncio.run(search_command(update, ctx))
 
-    assert len(message.replies) == 1
-    reply = message.replies[0]
+    assert len(message.replies) == 2
+    answer_reply = message.replies[0]
+    reply = message.replies[1]
     reply_text = reply["text"]
+
+    assert "Ответ" in answer_reply["text"]
+    assert "Источники" in answer_reply["text"]
+    assert "1." in answer_reply["text"]
 
     # Should show first page results
     assert "Book 0" in reply_text
@@ -201,6 +206,43 @@ def test_search_command_handles_timeout(tmp_path: Path, monkeypatch: Any) -> Non
     reply_text = message.replies[0]["text"]
     # Timeout goes through error path with timed_out=True
     assert "превысил" in reply_text.lower() or "лимит" in reply_text.lower()
+
+
+def test_search_command_marks_answer_as_insufficient_when_sources_absent(tmp_path: Path, monkeypatch: Any) -> None:
+    db_path = tmp_path / "search.db"
+
+    mock_results = (
+        SearchResult(
+            source_path="book_1.pdf",
+            chunk_id=1,
+            chunk_no=0,
+            display="Book 1",
+            excerpt="",
+            title=None,
+            author=None,
+        ),
+    )
+
+    async def mock_search(**kwargs: Any) -> SearchResponse:
+        del kwargs
+        return SearchResponse(results=mock_results)
+
+    monkeypatch.setattr("librar.bot.handlers.commands.search_hybrid_cli", mock_search)
+
+    with BotRepository(db_path) as repository:
+        message = DummyMessage()
+        update = SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=123),
+        )
+        ctx = _context(repository)
+        ctx.args = ["test"]
+
+        asyncio.run(search_command(update, ctx))
+
+    assert len(message.replies) == 2
+    answer_text = message.replies[0]["text"]
+    assert "Недостаточно данных" in answer_text
 
 
 def test_books_command_lists_metadata_with_pagination(tmp_path: Path) -> None:

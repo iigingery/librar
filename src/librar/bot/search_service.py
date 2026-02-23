@@ -35,6 +35,22 @@ class SearchResponse:
     timed_out: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class AnswerSource:
+    title: str
+    author: str
+    source_path: str
+    location: str
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerResult:
+    answer: str
+    sources: tuple[AnswerSource, ...]
+    is_confirmed: bool
+    prompt: str
+
+
 def _normalize_source_path(source_path: str) -> str:
     cleaned = source_path.strip().replace("/", "\\")
     cwd = str(Path.cwd()).replace("/", "\\")
@@ -107,6 +123,89 @@ def _dedupe_results(results: list[SearchResult]) -> tuple[SearchResult, ...]:
         seen.add(key)
         deduped.append(result)
     return tuple(deduped)
+
+
+def _format_location(result: SearchResult) -> str:
+    if result.page is not None:
+        return f"стр. {result.page}"
+    return f"позиция {max(result.chunk_no, 0) + 1}"
+
+
+def _build_prompt(*, query: str, results: tuple[SearchResult, ...]) -> str:
+    fragments: list[str] = []
+    for idx, result in enumerate(results, 1):
+        location = _format_location(result)
+        fragments.append(
+            (
+                f"[{idx}] title={result.title or 'Без названия'}; "
+                f"author={result.author or 'Неизвестный автор'}; "
+                f"source_path={result.source_path}; "
+                f"location={location}\n"
+                f"Фрагмент: {result.excerpt}"
+            )
+        )
+
+    context_block = "\n\n".join(fragments)
+    return (
+        "Ты помощник библиотечного бота. "
+        "Отвечай только на основе контекста ниже. "
+        "Если контекста недостаточно, прямо напиши: 'Недостаточно данных в источниках'. "
+        "Каждое утверждение подтверждай ссылками на фрагменты в формате [n].\n\n"
+        f"Вопрос: {query}\n\n"
+        f"Контекст:\n{context_block}"
+    )
+
+
+def _build_sources(results: tuple[SearchResult, ...]) -> tuple[AnswerSource, ...]:
+    sources: list[AnswerSource] = []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    for result in results:
+        source = AnswerSource(
+            title=result.title or "Без названия",
+            author=result.author or "Неизвестный автор",
+            source_path=result.source_path,
+            location=_format_location(result),
+        )
+        key = (source.title, source.author, source.source_path, source.location)
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append(source)
+
+    return tuple(sources)
+
+
+def answer_question(*, query: str, results: tuple[SearchResult, ...]) -> AnswerResult:
+    if not results:
+        return AnswerResult(
+            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            sources=(),
+            is_confirmed=False,
+            prompt="",
+        )
+
+    prompt = _build_prompt(query=query, results=results)
+    sources = _build_sources(results)
+    if not sources:
+        return AnswerResult(
+            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            sources=(),
+            is_confirmed=False,
+            prompt=prompt,
+        )
+
+    lead_excerpt = results[0].excerpt.strip()
+    if not lead_excerpt:
+        return AnswerResult(
+            answer="Недостаточно данных в источниках для подтверждённого ответа.",
+            sources=sources,
+            is_confirmed=False,
+            prompt=prompt,
+        )
+
+    answer_text = f"{lead_excerpt} [1]"
+    return AnswerResult(answer=answer_text, sources=sources, is_confirmed=True, prompt=prompt)
 
 
 async def search_hybrid_cli(

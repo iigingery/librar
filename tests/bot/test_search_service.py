@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from librar.bot.search_service import search_hybrid_cli
+from librar.bot.search_service import SearchResult, answer_question, search_hybrid_cli
 
 
 class _DummyProc:
@@ -114,3 +114,36 @@ def test_search_hybrid_cli_malformed_json_returns_error(monkeypatch) -> None:
 
     assert response.results == ()
     assert response.error == "Hybrid CLI returned malformed JSON"
+
+
+def test_answer_question_without_results_is_marked_as_insufficient() -> None:
+    result = answer_question(query="Кто автор?", results=())
+
+    assert result.is_confirmed is False
+    assert result.sources == ()
+    assert "Недостаточно данных" in result.answer
+
+
+def test_answer_question_builds_sources_from_metadata() -> None:
+    search_results = (
+        SearchResult(
+            source_path="books/book.pdf",
+            chunk_id=1,
+            chunk_no=4,
+            display="Book",
+            excerpt="Автор книги — Иван Иванов.",
+            title="Тестовая книга",
+            author="Иван Иванов",
+            page=12,
+        ),
+    )
+
+    result = answer_question(query="Кто автор?", results=search_results)
+
+    assert result.is_confirmed is True
+    assert len(result.sources) == 1
+    assert result.sources[0].title == "Тестовая книга"
+    assert result.sources[0].author == "Иван Иванов"
+    assert result.sources[0].source_path == "books/book.pdf"
+    assert result.sources[0].location == "стр. 12"
+    assert "Отвечай только на основе контекста" in result.prompt
