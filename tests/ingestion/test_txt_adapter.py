@@ -11,7 +11,7 @@ def test_txt_adapter_decodes_utf8_and_extracts_headers(tmp_path: Path) -> None:
 
     result = TXTAdapter().extract(sample)
 
-    assert result.metadata.format == "txt"
+    assert result.metadata.format_name == "txt"
     assert result.metadata.title == "Луна"
     assert result.metadata.author == "Александр"
     assert [block.text for block in result.blocks[-2:]] == ["Первая строка", "Вторая строка"]

@@ -135,8 +135,8 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Не удалось определить чат.")
         return
 
-    query = " ".join(context.args or []).strip()
-    if not query:
+    query_text = " ".join(context.args or []).strip()
+    if not query_text:
         await update.message.reply_text(
             "Использование: /search <запрос>\n\nПример: /search программирование"
         )
@@ -157,7 +157,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Execute search via async gateway
     response = await search_hybrid_cli(
-        query=query,
+        query=query_text,
         db_path=db_path,
         index_path=index_path,
         limit=limit,
@@ -172,7 +172,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     if not response.results:
-        await update.message.reply_text(f"Ничего не найдено по запросу: {query}")
+        await update.message.reply_text(f"Ничего не найдено по запросу: {query_text}")
         return
 
     # Store full results in user_data under session key for pagination
@@ -184,14 +184,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     message_id = int(getattr(update.message, "message_id", 0))
     session_key = _build_session_key(chat_id, message_id)
     search_sessions[session_key] = {
-        "query": query,
+        "query": query_text,
         "results": response.results,
         "excerpt_size": excerpt_size,
     }
     _cleanup_chat_sessions(search_sessions, chat_id=chat_id, active_session_key=session_key)
 
     # Backward compatibility with legacy pagination storage
-    context.user_data["search_query"] = query
+    context.user_data["search_query"] = query_text
     context.user_data["search_results"] = response.results
     context.user_data["search_excerpt_size"] = excerpt_size
 
@@ -199,7 +199,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     total = len(response.results)
     text = render_search_page(
         results=response.results,
-        search_query=query,
+        search_query=query_text,
         excerpt_size=excerpt_size,
         page_num=0,
         page_size=page_size,
@@ -219,8 +219,8 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if update.message is None:
         return
 
-    query = " ".join(context.args or []).strip()
-    if not query:
+    query_text = " ".join(context.args or []).strip()
+    if not query_text:
         await update.message.reply_text("Использование: /ask <вопрос>\n\nПример: /ask Кто автор книги?")
         return
 
@@ -250,7 +250,7 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     history = tuple((row.role, row.content) for row in history_rows[-5:])
 
     answer_result = await answer_question(
-        query=query,
+        query=query_text,
         db_path=db_path,
         index_path=index_path,
         top_k=top_k,
@@ -263,7 +263,7 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         chat_id=int(chat.id),
         user_id=int(user.id),
         role="user",
-        content=query,
+        content=query_text,
         limit=DEFAULT_DIALOG_HISTORY_LIMIT,
     )
     repository.save_dialog_message(

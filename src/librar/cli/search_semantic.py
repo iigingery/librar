@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repeats", type=int, default=1, help="How many repeated query runs to measure")
     args = parser.parse_args(argv)
 
+    query_text = args.query
     safe_limit = max(1, min(args.limit, 100))
 
     with SemanticQueryService.from_db_path(
@@ -57,13 +58,13 @@ def main(argv: list[str] | None = None) -> int:
     ) as service:
         results, timings = run_search(
             service,
-            query=args.query,
+            query=query_text,
             limit=safe_limit,
             repeats=args.repeats if args.measure_ms else 1,
         )
 
     payload: dict[str, object] = {
-        "query": args.query,
+        "query": query_text,
         "limit": safe_limit,
         "results": results,
     }

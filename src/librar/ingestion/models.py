@@ -12,7 +12,7 @@ class ExtractedMetadata:
     title: str | None = None
     author: str | None = None
     language: str | None = None
-    format: str | None = None
+    format_name: str | None = None
 
 
 @dataclass(slots=True)

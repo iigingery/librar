@@ -77,7 +77,7 @@ class EPUBAdapter:
         title = _first_non_empty(book.get_metadata("DC", "title")) or _normalize_title_from_path(path)
         author = _first_non_empty(book.get_metadata("DC", "creator"))
         language = _first_non_empty(book.get_metadata("DC", "language"))
-        return ExtractedMetadata(title=title, author=author, language=language, format="epub")
+        return ExtractedMetadata(title=title, author=author, language=language, format_name="epub")
 
     def _extract_blocks(self, book: epub.EpubBook) -> list[DocumentBlock]:
         extracted_blocks: list[DocumentBlock] = []

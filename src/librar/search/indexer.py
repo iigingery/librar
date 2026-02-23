@@ -116,7 +116,7 @@ class SearchIndexer:
                     source_path=source_path,
                     title=ingested.document.metadata.title,
                     author=ingested.document.metadata.author,
-                    format_name=ingested.document.metadata.format,
+                    format_name=ingested.document.metadata.format_name,
                     fingerprint=fingerprint,
                     mtime_ns=mtime_ns,
                     chunks=chunk_rows,

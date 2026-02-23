@@ -46,7 +46,7 @@ class PDFAdapter:
         doc_metadata = doc.metadata or {}
         title = _first_non_empty(doc_metadata.get("title")) or _normalize_title_from_path(path)
         author = _first_non_empty(doc_metadata.get("author"))
-        return ExtractedMetadata(title=title, author=author, format="pdf")
+        return ExtractedMetadata(title=title, author=author, format_name="pdf")
 
     def _extract_blocks(self, doc: pymupdf.Document) -> list[DocumentBlock]:
         extracted_blocks: list[DocumentBlock] = []
