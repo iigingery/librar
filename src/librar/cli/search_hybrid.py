@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate-limit", type=int, default=64, help="Per-branch candidate retrieval size before fusion")
     args = parser.parse_args(argv)
 
+    query_text = args.query
     safe_limit = max(1, min(args.limit, 100))
     safe_candidate_limit = max(safe_limit, args.candidate_limit)
 
@@ -38,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
 
     with HybridQueryService.from_db_path(db_path=args.db_path, index_path=args.index_path) as service:
         hits = service.search(
-            query=args.query,
+            query=query_text,
             limit=safe_limit,
             alpha=args.alpha,
             author_filter=args.author,
@@ -48,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     payload = {
-        "query": args.query,
+        "query": query_text,
         "limit": safe_limit,
         "alpha": args.alpha,
         "phrase_mode": args.phrase_mode,

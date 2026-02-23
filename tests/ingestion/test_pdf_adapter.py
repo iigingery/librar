@@ -38,7 +38,7 @@ def test_pdf_adapter_extracts_ordered_page_blocks_and_metadata(tmp_path: Path) -
     assert adapter.supports(pdf_path, b"%PDF-1.7")
     assert document.metadata.title == "Collected Works"
     assert document.metadata.author == "Jane Doe"
-    assert document.metadata.format == "pdf"
+    assert document.metadata.format_name == "pdf"
     assert document.blocks
 
     pages = [block.source.page for block in document.blocks]

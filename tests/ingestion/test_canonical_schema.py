@@ -16,7 +16,7 @@ class _StubAdapter:
     def extract(self, path: Path) -> ExtractedDocument:
         return ExtractedDocument(
             source_path=str(path),
-            metadata=ExtractedMetadata(title="t", author="a", format="txt"),
+            metadata=ExtractedMetadata(title="t", author="a", format_name="txt"),
             blocks=[
                 DocumentBlock(
                     text="Hello",
@@ -39,7 +39,7 @@ def test_source_ref_covers_locator_fields() -> None:
 def test_document_schema_uses_canonical_models() -> None:
     document = ExtractedDocument(
         source_path="books/sample.epub",
-        metadata=ExtractedMetadata(title="Sample", author="Author", format="epub"),
+        metadata=ExtractedMetadata(title="Sample", author="Author", format_name="epub"),
         blocks=[DocumentBlock(text="Body", source=SourceRef(page=3))],
     )
 
@@ -53,7 +53,7 @@ def test_adapter_contract_matches_protocol() -> None:
 
     assert isinstance(adapter, IngestionAdapter)
     assert adapter.supports(Path("note.txt"))
-    assert adapter.extract(Path("note.txt")).metadata.format == "txt"
+    assert adapter.extract(Path("note.txt")).metadata.format_name == "txt"
 
 
 def test_normalization_helpers_are_stable() -> None:
@@ -74,7 +74,7 @@ def test_ingestor_registers_adapters_and_returns_canonical_type() -> None:
 
     assert "txt" in ingestor.adapter_map
     assert isinstance(result.document, ExtractedDocument)
-    assert result.document.metadata.format == "txt"
+    assert result.document.metadata.format_name == "txt"
     assert result.chunks
     assert result.dedupe.is_duplicate is False
 

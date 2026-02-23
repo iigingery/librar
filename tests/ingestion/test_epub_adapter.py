@@ -53,7 +53,7 @@ def test_epub_adapter_preserves_chapter_boundaries_and_order(tmp_path: Path) -> 
     assert adapter.supports(epub_path, b"PK\x03\x04")
     assert document.metadata.title == "Epub Sample"
     assert document.metadata.author == "John Smith"
-    assert document.metadata.format == "epub"
+    assert document.metadata.format_name == "epub"
     assert document.blocks
 
     chapter_sequence = [block.source.chapter for block in document.blocks]

@@ -77,7 +77,7 @@ class TXTAdapter:
             if field == "author" and not author:
                 author = clean_value
 
-        return ExtractedMetadata(title=title or path.stem, author=author, format="txt")
+        return ExtractedMetadata(title=title or path.stem, author=author, format_name="txt")
 
     def _build_blocks(self, text: str) -> list[DocumentBlock]:
         blocks: list[DocumentBlock] = []

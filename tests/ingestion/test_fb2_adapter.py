@@ -23,7 +23,7 @@ def test_fb2_adapter_extracts_raw_fb2_with_russian_text() -> None:
 
     result = adapter.extract(fixture)
 
-    assert result.metadata.format == "fb2"
+    assert result.metadata.format_name == "fb2"
     assert result.metadata.title
     assert result.blocks
     joined = " ".join(block.text for block in result.blocks)
@@ -41,7 +41,7 @@ def test_fb2_adapter_extracts_zipped_fb2_payload() -> None:
 
         result = adapter.extract(zipped)
 
-    assert result.metadata.format == "fb2"
+    assert result.metadata.format_name == "fb2"
     assert result.metadata.title
     assert any(block.source.item_id for block in result.blocks)
     assert _CYRILLIC_RE.search(" ".join(block.text for block in result.blocks))

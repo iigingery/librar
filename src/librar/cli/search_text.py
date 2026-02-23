@@ -20,19 +20,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Treat query as an exact phrase in addition to lemma phrase",
     )
     args = parser.parse_args(argv)
+    query_text = args.query
+    safe_limit = max(1, min(args.limit, 100))
 
     with SearchRepository(args.db_path) as repository:
         hits = search_chunks(
             repository.connection,
-            query=args.query,
+            query=query_text,
             limit=args.limit,
             phrase_mode=args.phrase_mode,
         )
 
     payload = {
-        "query": args.query,
+        "query": query_text,
         "phrase_mode": args.phrase_mode,
-        "limit": max(1, min(args.limit, 100)),
+        "limit": safe_limit,
         "results": [hit.to_dict() for hit in hits],
     }
     print(json.dumps(payload, ensure_ascii=True, indent=2))

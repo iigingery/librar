@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
                 "source_path": ingested.document.source_path,
                 "title": ingested.document.metadata.title,
                 "author": ingested.document.metadata.author,
-                "format": ingested.document.metadata.format,
+                "format": ingested.document.metadata.format_name,
                 "chunk_count": len(ingested.chunks),
                 "is_duplicate": ingested.dedupe.is_duplicate,
                 "duplicate_reason": ingested.dedupe.reason,

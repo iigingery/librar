@@ -85,7 +85,7 @@ def test_ingestion_pipeline_handles_pdf_epub_fb2_txt(tmp_path: Path) -> None:
         ingestor.ingest(txt_path),
     ]
 
-    formats = {result.document.metadata.format for result in results}
+    formats = {result.document.metadata.format_name for result in results}
     assert formats == {"pdf", "epub", "fb2", "txt"}
     assert all(result.chunks for result in results)
     assert all(result.document.metadata.title for result in results)

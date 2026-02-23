@@ -68,7 +68,7 @@ class FB2Adapter:
             title=title or path.stem,
             author=author,
             language=language,
-            format="fb2",
+            format_name="fb2",
         )
 
     def _extract_author(self, root: etree._Element) -> str | None:

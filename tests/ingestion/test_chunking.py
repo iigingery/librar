@@ -5,7 +5,7 @@ from librar.ingestion.models import DocumentBlock, ExtractedDocument, ExtractedM
 
 
 def _doc_with_blocks(blocks: list[DocumentBlock]) -> ExtractedDocument:
-    return ExtractedDocument(source_path="books/sample.txt", metadata=ExtractedMetadata(format="txt"), blocks=blocks)
+    return ExtractedDocument(source_path="books/sample.txt", metadata=ExtractedMetadata(format_name="txt"), blocks=blocks)
 
 
 def test_chunking_preserves_locator_domain_and_boundaries() -> None:
