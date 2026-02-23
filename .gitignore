@@ -21,12 +21,23 @@ venv/
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
 *.faiss
 *.log
 .librar-ingestion-cache.json
 .uat-phase1-cache.json
 .phase2-*.db
 nul
+
+# OS and IDE noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
 
 # Local content
 books/
