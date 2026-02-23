@@ -7,7 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from librar.bot.handlers.commands import ask_command, books_command, help_command, search_command, start_command
+from librar.bot.handlers.commands import (
+    ask_command,
+    books_command,
+    help_command,
+    reset_context_command,
+    search_command,
+    start_command,
+)
 from librar.bot.repository import BotRepository
 from librar.bot.search_service import SearchResponse, SearchResult
 
@@ -151,6 +158,7 @@ def test_ask_command_calls_answer_question_and_formats_sources(tmp_path: Path, m
         update = SimpleNamespace(
             message=message,
             effective_user=SimpleNamespace(id=123),
+            effective_chat=SimpleNamespace(id=777),
         )
         ctx = _context(repository)
         ctx.args = ["Кто", "автор?"]
@@ -163,6 +171,29 @@ def test_ask_command_calls_answer_question_and_formats_sources(tmp_path: Path, m
     assert "Подтвержденный ответ [1]" in reply_text
     assert "Источники" in reply_text
     assert "стр. 10" in reply_text
+
+
+def test_reset_context_command_clears_saved_dialog_history(tmp_path: Path) -> None:
+    db_path = tmp_path / "search.db"
+
+    with BotRepository(db_path) as repository:
+        repository.save_dialog_message(chat_id=777, user_id=123, role="user", content="Привет")
+        repository.save_dialog_message(chat_id=777, user_id=123, role="assistant", content="Здравствуйте")
+
+        message = DummyMessage()
+        update = SimpleNamespace(
+            message=message,
+            effective_user=SimpleNamespace(id=123),
+            effective_chat=SimpleNamespace(id=777),
+        )
+
+        asyncio.run(reset_context_command(update, _context(repository)))
+
+        history = repository.get_dialog_history(chat_id=777, user_id=123)
+
+    assert len(message.replies) == 1
+    assert "очищена" in message.replies[0]["text"].lower()
+    assert history == ()
 
 
 def test_books_command_handles_empty_library(tmp_path: Path) -> None:
