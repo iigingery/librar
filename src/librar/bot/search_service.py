@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import ntpath
+import time
 from dataclasses import dataclass
 from pathlib import Path
 import sys
 
-from librar.hybrid.query import HybridSearchHit, build_llm_context
+from librar.hybrid.query import HybridQueryService, HybridSearchHit, build_llm_context
 from librar.semantic.config import SemanticSettings
 from librar.semantic.openrouter import OpenRouterGenerator
 
@@ -19,11 +21,16 @@ DEFAULT_GENERATION_TEMPERATURE = 0.2
 DEFAULT_GENERATION_MAX_TOKENS = 350
 DEFAULT_MIN_RELEVANT_CHUNKS = 2
 DEFAULT_MIN_TOTAL_RELEVANCE = 0.7
+DEFAULT_HEAVY_SEARCH_CONCURRENCY = 2
 INSUFFICIENT_DATA_ANSWER = "В библиотеке нет достаточных данных по вопросу. Пожалуйста, переформулируйте запрос."
 GENERATION_TIMEOUT_ANSWER = (
     "Не удалось вовремя сгенерировать ответ по найденным источникам. "
     "Пожалуйста, попробуйте повторить запрос или немного сократить его."
 )
+
+
+logger = logging.getLogger(__name__)
+_search_semaphore = asyncio.Semaphore(DEFAULT_HEAVY_SEARCH_CONCURRENCY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +131,25 @@ def _parse_results(raw_results: object) -> list[SearchResult]:
             )
         )
     return parsed
+
+
+def _from_hybrid_hits(hits: list[HybridSearchHit]) -> list[SearchResult]:
+    return [
+        SearchResult(
+            source_path=hit.source_path,
+            chunk_id=hit.chunk_id,
+            chunk_no=hit.chunk_no,
+            display=hit.display,
+            excerpt=hit.excerpt,
+            title=hit.title,
+            author=hit.author,
+            format_name=hit.format_name,
+            page=hit.page,
+            chapter=hit.chapter,
+            hybrid_score=hit.hybrid_score,
+        )
+        for hit in hits
+    ]
 
 
 def _dedupe_results(results: list[SearchResult]) -> tuple[SearchResult, ...]:
@@ -363,6 +389,65 @@ async def search_hybrid_cli(
     limit: int = 20,
     timeout_seconds: float = DEFAULT_SEARCH_TIMEOUT_SECONDS,
 ) -> SearchResponse:
+    async with _search_semaphore:
+        fast_path_response = await _search_hybrid_in_process(
+            query=query,
+            db_path=db_path,
+            index_path=index_path,
+            limit=limit,
+            timeout_seconds=timeout_seconds,
+        )
+        if fast_path_response is not None:
+            return fast_path_response
+
+        return await _search_hybrid_via_cli(
+            query=query,
+            db_path=db_path,
+            index_path=index_path,
+            limit=limit,
+            timeout_seconds=timeout_seconds,
+        )
+
+
+async def _search_hybrid_in_process(
+    *,
+    query: str,
+    db_path: str | Path,
+    index_path: str | Path,
+    limit: int,
+    timeout_seconds: float,
+) -> SearchResponse | None:
+    started = time.perf_counter()
+
+    def _run_search() -> list[HybridSearchHit]:
+        with HybridQueryService.from_db_path(db_path=db_path, index_path=index_path) as service:
+            return service.search(query=query, limit=limit)
+
+    try:
+        hits = await asyncio.wait_for(asyncio.to_thread(_run_search), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        latency_ms = (time.perf_counter() - started) * 1000
+        logger.warning("Hybrid search in-process timed out in %.2fms", latency_ms)
+        return SearchResponse(results=(), error="Search timed out", timed_out=True)
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - started) * 1000
+        logger.info("Hybrid search in-process unavailable after %.2fms, fallback to CLI: %s", latency_ms, exc)
+        return None
+
+    latency_ms = (time.perf_counter() - started) * 1000
+    logger.info("Hybrid search in-process latency: %.2fms", latency_ms)
+    return SearchResponse(results=_dedupe_results(_from_hybrid_hits(hits)))
+
+
+async def _search_hybrid_via_cli(
+    *,
+    query: str,
+    db_path: str | Path,
+    index_path: str | Path,
+    limit: int,
+    timeout_seconds: float,
+) -> SearchResponse:
+    started = time.perf_counter()
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
@@ -384,12 +469,16 @@ async def search_hybrid_cli(
     except asyncio.TimeoutError:
         proc.kill()
         await proc.communicate()
+        latency_ms = (time.perf_counter() - started) * 1000
+        logger.warning("Hybrid search CLI timed out in %.2fms", latency_ms)
         return SearchResponse(results=(), error="Search timed out", timed_out=True)
 
     stdout_text = stdout_bytes.decode("utf-8", errors="replace")
     stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
 
     if proc.returncode != 0:
+        latency_ms = (time.perf_counter() - started) * 1000
+        logger.warning("Hybrid search CLI failed in %.2fms with code %s", latency_ms, proc.returncode)
         message = f"Hybrid CLI failed with exit code {proc.returncode}"
         if stderr_text:
             message = f"{message}: {stderr_text}"
@@ -411,4 +500,6 @@ async def search_hybrid_cli(
     except ValueError as exc:
         return SearchResponse(results=(), error=str(exc))
 
+    latency_ms = (time.perf_counter() - started) * 1000
+    logger.info("Hybrid search CLI latency: %.2fms", latency_ms)
     return SearchResponse(results=_dedupe_results(parsed))
