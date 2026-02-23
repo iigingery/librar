@@ -112,6 +112,41 @@ async def test_upload_duplicate_book_message(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
+async def test_upload_duplicate_book_removes_downloaded_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    books_path = tmp_path / "books"
+    books_path.mkdir()
+
+    async def fake_download_to_drive(path: Path) -> None:
+        path.write_text("content", encoding="utf-8")
+
+    telegram_file = SimpleNamespace(download_to_drive=AsyncMock(side_effect=fake_download_to_drive))
+    document = SimpleNamespace(file_size=2000, file_name="dup.pdf", get_file=AsyncMock(return_value=telegram_file))
+    update, context, _, status_message = _build_update_context(document)
+    context.bot_data["books_path"] = str(books_path)
+
+    async def fake_pipeline(file_path: Path, **kwargs: Any) -> IngestionPipelineResult:
+        del kwargs
+        assert file_path.exists()
+        return IngestionPipelineResult(
+            success=True,
+            title=None,
+            author=None,
+            format_name="pdf",
+            chunk_count=0,
+            is_duplicate=True,
+            error=None,
+        )
+
+    monkeypatch.setattr("librar.bot.handlers.upload.run_ingestion_pipeline", fake_pipeline)
+
+    await handle_book_upload(update, context)
+
+    saved_path = books_path / "dup.pdf"
+    assert not saved_path.exists()
+    status_message.edit_text.assert_awaited_once_with("Эта книга уже есть в библиотеке.")
+
+
+@pytest.mark.asyncio
 async def test_upload_ingestion_failure_shows_error(monkeypatch: pytest.MonkeyPatch) -> None:
     telegram_file = SimpleNamespace(download_to_drive=AsyncMock())
     document = SimpleNamespace(file_size=2000, file_name="bad.txt", get_file=AsyncMock(return_value=telegram_file))
