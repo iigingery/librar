@@ -10,20 +10,20 @@ from __future__ import annotations
 import re
 
 # Character-level substitution map (pre-revolutionary → modern)
-#   ѣ (U+0463) → е  (yat → ye)
-#   ѳ (U+0473) → ф  (fita → ef)
-#   і (U+0456) → и  (Cyrillic і, not Latin i → i)
-#   ѵ (U+0475) → и  (izhitsa → i)
+#   Ѣ/ѣ (U+0462/U+0463) → е  (yat → ye)
+#   Ѳ/ѳ (U+0472/U+0473) → ф  (fita → ef)
+#   І/і (U+0406/U+0456) → и  (Cyrillic і → i)
+#   Ѵ/ѵ (U+0474/U+0475) → и  (izhitsa → i)
 _PREREV_TRANS = str.maketrans(
-    "\u0463\u0473\u0456\u0475",  # ѣ ѳ і ѵ
-    "\u0435\u0444\u0438\u0438",  # е ф и и
+    "\u0462\u0463\u0472\u0473\u0406\u0456\u0474\u0475",  # Ѣ ѣ Ѳ ѳ І і Ѵ ѵ
+    "\u0415\u0435\u0424\u0444\u0418\u0438\u0418\u0438",  # Е е Ф ф И и И и
 )
 
 # Terminal hard sign (ъ) at a word boundary — strip it
 _TERMINAL_HARD_SIGN_RE = re.compile(r"\u044a\b")
 
 # Detection pattern — does this text contain any pre-revolutionary characters?
-_PREREV_CHARS_RE = re.compile(r"[\u0463\u0473\u0456\u0475]")
+_PREREV_CHARS_RE = re.compile(r"[\u0462\u0463\u0472\u0473\u0406\u0456\u0474\u0475]")
 
 
 def has_prerev_characters(text: str) -> bool:

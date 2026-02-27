@@ -3,6 +3,7 @@ pyproject.toml
 src/librar.egg-info/PKG-INFO
 src/librar.egg-info/SOURCES.txt
 src/librar.egg-info/dependency_links.txt
+src/librar.egg-info/entry_points.txt
 src/librar.egg-info/requires.txt
 src/librar.egg-info/top_level.txt
 src/librar/automation/__init__.py
@@ -16,10 +17,15 @@ src/librar/bot/search_service.py
 src/librar/bot/handlers/__init__.py
 src/librar/bot/handlers/callbacks.py
 src/librar/bot/handlers/commands.py
+src/librar/bot/handlers/common.py
+src/librar/bot/handlers/config.py
 src/librar/bot/handlers/inline.py
+src/librar/bot/handlers/renderers.py
 src/librar/bot/handlers/settings.py
 src/librar/bot/handlers/upload.py
 src/librar/cli/__init__.py
+src/librar/cli/build_timeline.py
+src/librar/cli/classify_books.py
 src/librar/cli/index_books.py
 src/librar/cli/index_semantic.py
 src/librar/cli/ingest_books.py
@@ -34,8 +40,10 @@ src/librar/ingestion/__init__.py
 src/librar/ingestion/chunking.py
 src/librar/ingestion/dedupe.py
 src/librar/ingestion/ingestor.py
+src/librar/ingestion/language_detection.py
 src/librar/ingestion/models.py
 src/librar/ingestion/normalization.py
+src/librar/ingestion/ocr.py
 src/librar/ingestion/adapters/__init__.py
 src/librar/ingestion/adapters/base.py
 src/librar/ingestion/adapters/epub_adapter.py
@@ -45,6 +53,7 @@ src/librar/ingestion/adapters/txt_adapter.py
 src/librar/search/__init__.py
 src/librar/search/indexer.py
 src/librar/search/normalize.py
+src/librar/search/prerev_normalization.py
 src/librar/search/query.py
 src/librar/search/repository.py
 src/librar/search/schema.py
@@ -55,3 +64,9 @@ src/librar/semantic/openrouter.py
 src/librar/semantic/query.py
 src/librar/semantic/semantic_repository.py
 src/librar/semantic/vector_store.py
+src/librar/taxonomy/__init__.py
+src/librar/taxonomy/classifier.py
+src/librar/taxonomy/taxonomy_repository.py
+src/librar/timeline/__init__.py
+src/librar/timeline/extractor.py
+src/librar/timeline/timeline_repository.py

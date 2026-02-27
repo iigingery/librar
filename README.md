@@ -37,6 +37,39 @@ Data flow (high level):
 - Telegram bot token (from BotFather)
 - OpenRouter API key
 
+### 1.5) Установка Tesseract (опционально, для OCR сканированных PDF)
+
+Если ваша библиотека содержит **сканированные PDF** (изображения без встроенного
+текстового слоя), установите Tesseract OCR для автоматического распознавания текста.
+Без него бот работает нормально — сканированные страницы просто пропускаются,
+а все PDF с встроенным текстом обрабатываются как обычно.
+
+**Windows:**
+
+1. Скачайте установщик со страницы UB Mannheim:
+   https://github.com/UB-Mannheim/tesseract/wiki
+2. Запустите установщик; на шаге «Additional language data» отметьте пакеты:
+   **Russian**, **Kazakh**, **Tatar**, **English**
+3. Добавьте путь к Tesseract в системную переменную `PATH`.
+   Пример: `C:\Program Files\Tesseract-OCR`
+   _(Панель управления → Система → Дополнительные параметры → Переменные среды)_
+4. Откройте новый терминал и проверьте установку:
+   ```powershell
+   tesseract --version
+   ```
+
+**Linux (Ubuntu / Debian):**
+
+```bash
+sudo apt-get install tesseract-ocr tesseract-ocr-rus tesseract-ocr-kaz tesseract-ocr-tat tesseract-ocr-eng
+```
+
+**macOS (Homebrew):**
+
+```bash
+brew install tesseract tesseract-lang
+```
+
 ### 2) Clone and install
 
 ```powershell
@@ -169,6 +202,9 @@ Must be set for relevant runtime mode:
 - **No semantic results:** rebuild semantic index:
   `python -m librar.cli.index_semantic --db-path .librar-search.db --index-path .librar-semantic.faiss`.
 - **Watcher does not pick up files:** verify watched folder path (`--watch-dir` or `LIBRAR_WATCH_DIR`) and supported file formats.
+- **"Tesseract is not installed" warning during ingestion:** this is a one-time
+  notice that OCR for scanned pages is disabled. Ingestion continues normally.
+  To enable OCR, see **section 1.5** above.
 - **Bad/empty text matches:** rebuild ingestion and text index:
   1) `python -m librar.cli.ingest_books --path books --cache-file .librar-ingestion-cache.json`
   2) `python -m librar.cli.index_books --books-path books --db-path .librar-search.db`
