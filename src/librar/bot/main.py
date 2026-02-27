@@ -8,10 +8,13 @@ from pathlib import Path
 import signal
 import sys
 
-from dotenv import load_dotenv
 from telegram.ext import Application
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from librar.bot.config import BotSettings
 from librar.automation.ingestion_service import run_ingestion_pipeline
