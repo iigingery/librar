@@ -93,7 +93,9 @@ class PDFAdapter:
                         )
                     )
             else:
-                # OCR path or embedded fallback — treat as a single page block
+                # OCR path or embedded fallback — treat as a single page block.
+                # OCR_SKIPPED means Tesseract is not installed; the single
+                # process-level warning was already emitted by ocr.py.
                 if result.status == OcrStatus.OCR_FAILED:
                     logger.warning(
                         "OCR failed for page %d: %s", page_index, result.reason
