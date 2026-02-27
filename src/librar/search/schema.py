@@ -42,6 +42,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
             title TEXT,
             author TEXT,
             format TEXT,
+            language TEXT,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 

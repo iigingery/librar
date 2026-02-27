@@ -45,7 +45,7 @@ _DECADE_FULL_RE = re.compile(
 _ROMAN_CENTURY_RE = re.compile(
     r"\b(X{0,3}(?:IX|IV|V?I{0,3}))"
     r"(?:[\s]*[-–—][\s]*(X{0,3}(?:IX|IV|V?I{0,3})))?"
-    r"[\s]+(?:вв?\.?|в(?:ека?|\.)|столетии?)\b",
+    r"[\s]+(?:вв?\.?|в(?:ек[а-яё]{0,4}|\.)|столетии?)\b",
     re.IGNORECASE,
 )
 
@@ -121,25 +121,8 @@ def extract_temporal_spans(text: str) -> list[TemporalSpan]:
         )
         covered.add((m.start(), m.end()))
 
-    # 2. Single years
-    for m in _YEAR_RE.finditer(text):
-        if _is_covered(m.start(), m.end(), covered):
-            continue
-        year = int(m.group(1))
-        spans.append(
-            TemporalSpan(
-                year_from=year,
-                year_to=year,
-                decade=None,
-                century=None,
-                source_fragment=m.group(0),
-                is_approximate=_has_approx_context(text, m.start()),
-                confidence=0.9,
-            )
-        )
-        covered.add((m.start(), m.end()))
-
-    # 3. Full decades: "1840-е годы"
+    # 2. Full decades: "1840-е годы" — must run before single years so that
+    #    "1840" in "1840-е" is not consumed as a plain year first.
     for m in _DECADE_FULL_RE.finditer(text):
         if _is_covered(m.start(), m.end(), covered):
             continue
@@ -153,6 +136,24 @@ def extract_temporal_spans(text: str) -> list[TemporalSpan]:
                 source_fragment=m.group(0),
                 is_approximate=True,
                 confidence=0.7,
+            )
+        )
+        covered.add((m.start(), m.end()))
+
+    # 3. Single years
+    for m in _YEAR_RE.finditer(text):
+        if _is_covered(m.start(), m.end(), covered):
+            continue
+        year = int(m.group(1))
+        spans.append(
+            TemporalSpan(
+                year_from=year,
+                year_to=year,
+                decade=None,
+                century=None,
+                source_fragment=m.group(0),
+                is_approximate=_has_approx_context(text, m.start()),
+                confidence=0.9,
             )
         )
         covered.add((m.start(), m.end()))
