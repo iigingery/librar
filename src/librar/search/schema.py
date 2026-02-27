@@ -17,6 +17,20 @@ def apply_runtime_pragmas(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA foreign_keys=ON;")
 
 
+def _add_column_if_missing(
+    connection: sqlite3.Connection,
+    table: str,
+    column: str,
+    column_def: str,
+) -> None:
+    """Add a column to a table if it does not yet exist (idempotent)."""
+    try:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
+
 def ensure_schema(connection: sqlite3.Connection) -> None:
     """Create search tables, FTS index, and sync triggers if missing."""
 
@@ -87,10 +101,55 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            parent_id INTEGER REFERENCES categories(id),
+            description TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS book_categories (
+            book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+            PRIMARY KEY (book_id, category_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS tags (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            tag_type TEXT NOT NULL CHECK(tag_type IN ('topic','region','period','entity')),
+            UNIQUE(name, tag_type)
+        );
+
+        CREATE TABLE IF NOT EXISTS book_tags (
+            book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            PRIMARY KEY (book_id, tag_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS timeline_events (
+            id INTEGER PRIMARY KEY,
+            book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            chunk_id INTEGER REFERENCES chunks(id) ON DELETE SET NULL,
+            year_from INTEGER,
+            year_to INTEGER,
+            decade INTEGER,
+            century INTEGER,
+            event_text TEXT NOT NULL,
+            source_fragment TEXT,
+            is_approximate INTEGER NOT NULL DEFAULT 0 CHECK(is_approximate IN (0,1)),
+            confidence REAL NOT NULL DEFAULT 1.0
+        );
+
         CREATE INDEX IF NOT EXISTS idx_chunks_book_id ON chunks(book_id);
         CREATE INDEX IF NOT EXISTS idx_index_state_book_id ON index_state(book_id);
         CREATE INDEX IF NOT EXISTS idx_semantic_chunk_state_model ON semantic_chunk_state(model);
         CREATE INDEX IF NOT EXISTS idx_semantic_chunk_state_vector_id ON semantic_chunk_state(vector_id);
+        CREATE INDEX IF NOT EXISTS idx_books_language ON books(language);
+        CREATE INDEX IF NOT EXISTS idx_timeline_year_from ON timeline_events(year_from);
+        CREATE INDEX IF NOT EXISTS idx_timeline_book_id ON timeline_events(book_id);
+        CREATE INDEX IF NOT EXISTS idx_book_categories_book_id ON book_categories(book_id);
+        CREATE INDEX IF NOT EXISTS idx_book_tags_book_id ON book_tags(book_id);
 
         CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
             INSERT INTO chunks_fts(rowid, raw_text, lemma_text)
@@ -110,6 +169,9 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
         END;
         """
     )
+
+    # Additive migrations: add columns to existing tables without breaking old DBs
+    _add_column_if_missing(connection, "books", "language", "TEXT")
 
 
 def optimize_fts(connection: sqlite3.Connection) -> None:

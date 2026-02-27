@@ -12,6 +12,21 @@ from librar.ingestion.normalization import normalize_whitespace
 
 _ZIP_MAGIC = b"PK\x03\x04"
 
+# Map FB2 <lang> tag values to ISO 639-1 codes
+_FB2_LANG_MAP: dict[str, str] = {
+    "ru": "ru", "rus": "ru", "russian": "ru",
+    "kk": "kk", "kaz": "kk", "kazakh": "kk",
+    "tt": "tt", "tat": "tt", "tatar": "tt",
+    "en": "en", "eng": "en", "english": "en",
+}
+
+
+def _normalize_fb2_language(raw: str | None) -> str | None:
+    """Map a raw FB2 <lang> tag to an ISO 639-1 code, or return None."""
+    if not raw:
+        return None
+    return _FB2_LANG_MAP.get(raw.strip().lower())
+
 
 class FB2Adapter:
     """Extract text and metadata from FictionBook sources."""
@@ -27,12 +42,25 @@ class FB2Adapter:
         return False
 
     def extract(self, path: Path) -> ExtractedDocument:
+        from librar.ingestion.language_detection import detect_language
+
         xml_bytes = self._read_fb2_payload(path)
         parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False, huge_tree=False)
         root = etree.fromstring(xml_bytes, parser=parser)
 
         metadata = self._extract_metadata(root, path)
         blocks = self._extract_blocks(root)
+
+        # If the FB2 <lang> tag didn't yield a recognized ISO language, detect from text
+        if not metadata.language:
+            sample_text = " ".join(b.text for b in blocks[:30])
+            detected = detect_language(sample_text)
+            metadata = ExtractedMetadata(
+                title=metadata.title,
+                author=metadata.author,
+                language=detected,
+                format_name=metadata.format_name,
+            )
 
         return ExtractedDocument(source_path=str(path), metadata=metadata, blocks=blocks)
 
@@ -62,7 +90,8 @@ class FB2Adapter:
     def _extract_metadata(self, root: etree._Element, path: Path) -> ExtractedMetadata:
         title = self._first_text(root.xpath("//*[local-name()='title-info']/*[local-name()='book-title']"))
         author = self._extract_author(root)
-        language = self._first_text(root.xpath("//*[local-name()='title-info']/*[local-name()='lang']"))
+        raw_language = self._first_text(root.xpath("//*[local-name()='title-info']/*[local-name()='lang']"))
+        language = _normalize_fb2_language(raw_language)
 
         return ExtractedMetadata(
             title=title or path.stem,
