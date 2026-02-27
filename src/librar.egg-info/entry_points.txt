@@ -1,0 +1,3 @@
+[console_scripts]
+build-timeline = librar.cli.build_timeline:main
+classify-books = librar.cli.classify_books:main
