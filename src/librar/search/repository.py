@@ -94,6 +94,7 @@ class SearchRepository:
         title: str | None,
         author: str | None,
         format_name: str | None,
+        language: str | None = None,
         fingerprint: str,
         mtime_ns: int,
         chunks: list[ChunkRow],
@@ -103,15 +104,16 @@ class SearchRepository:
         with self._connection:
             self._connection.execute(
                 """
-                INSERT INTO books(source_path, title, author, format)
-                VALUES(?, ?, ?, ?)
+                INSERT INTO books(source_path, title, author, format, language)
+                VALUES(?, ?, ?, ?, ?)
                 ON CONFLICT(source_path) DO UPDATE SET
                     title=excluded.title,
                     author=excluded.author,
                     format=excluded.format,
+                    language=excluded.language,
                     updated_at=CURRENT_TIMESTAMP
                 """,
-                (source_path, title, author, format_name),
+                (source_path, title, author, format_name, language),
             )
             row = self._connection.execute(
                 "SELECT id FROM books WHERE source_path = ?",

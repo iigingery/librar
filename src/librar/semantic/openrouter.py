@@ -13,6 +13,21 @@ from librar.semantic.config import SemanticSettings
 
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
+_RAG_SYSTEM_PROMPT = (
+    "Ты помощник библиотечного бота. "
+    "Отвечай ТОЛЬКО на основе предоставленного контекста. "
+    "Никогда не используй внешние знания. "
+    "Если контекста недостаточно, напиши: 'Недостаточно данных в источниках.'\n\n"
+    "ОБЯЗАТЕЛЬНЫЙ ФОРМАТ ОТВЕТА:\n"
+    "**Краткий ответ:**\n"
+    "[1–2 предложения с прямым ответом]\n\n"
+    "**Подробное объяснение:**\n"
+    "[структурированные детали из найденного текста с ссылками [n]]\n\n"
+    "**Источники:**\n"
+    "- «[Название книги]», стр. [номер страницы]\n"
+    "(повторить для каждого источника)"
+)
+
 
 @dataclass(slots=True)
 class EmbeddingRequestError(RuntimeError):
@@ -242,7 +257,7 @@ class OpenRouterGenerator:
                 return self._client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "Отвечай на русском языке."},
+                        {"role": "system", "content": _RAG_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=temperature,

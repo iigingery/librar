@@ -14,7 +14,7 @@ from librar.hybrid.scoring import (
     order_fused_scores,
     filter_relevant_scores,
 )
-from librar.search.query import SearchHit, search_chunks
+from librar.search.query import SearchFilters, SearchHit, search_chunks
 from librar.search.repository import SearchRepository
 from librar.semantic.config import SemanticSettings
 from librar.semantic.openrouter import OpenRouterEmbedder
@@ -343,6 +343,7 @@ class HybridQueryService:
         alpha: float = 0.7,
         author_filter: str | None = None,
         format_filter: str | None = None,
+        filters: SearchFilters | None = None,
         phrase_mode: bool = False,
         candidate_limit: int = 64,
     ) -> list[HybridSearchHit]:
@@ -360,6 +361,7 @@ class HybridQueryService:
             phrase_mode=phrase_mode,
             author_filter=author_filter,
             format_filter=format_filter,
+            filters=filters,
         )
         semantic_hits = self._semantic_searcher.search(
             query=rewritten.search_query,

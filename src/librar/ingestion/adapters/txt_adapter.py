@@ -36,11 +36,22 @@ class TXTAdapter:
         return b"\x00" not in sniffed_bytes
 
     def extract(self, path: Path) -> ExtractedDocument:
+        from librar.ingestion.language_detection import detect_language
+
         raw = path.read_bytes()
         encoding = self._detect_encoding(raw)
         text = raw.decode(encoding)
         metadata = self._extract_metadata(text, path)
         blocks = self._build_blocks(text)
+
+        # TXT has no embedded language metadata — always auto-detect
+        language = detect_language(text)
+        metadata = ExtractedMetadata(
+            title=metadata.title,
+            author=metadata.author,
+            language=language,
+            format_name=metadata.format_name,
+        )
 
         return ExtractedDocument(source_path=str(path), metadata=metadata, blocks=blocks)
 

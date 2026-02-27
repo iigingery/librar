@@ -22,6 +22,9 @@ dependencies = [
     "pymorphy2-dicts-ru==2.4.417127.4579844",
     "razdel==0.5.0",
     "watchdog>=4.0.0",
+    "pytesseract>=0.3.13",
+    "Pillow>=10.4.0",
+    "lingua-language-detector>=2.0.2",
 ]
 
 [tool.setuptools]
@@ -29,3 +32,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.scripts]
+classify-books = "librar.cli.classify_books:main"
+build-timeline = "librar.cli.build_timeline:main"

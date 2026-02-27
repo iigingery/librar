@@ -14,6 +14,21 @@ from librar.ingestion.normalization import normalize_whitespace
 
 _TITLE_SPLIT_RE = re.compile(r"[._\-]+")
 
+# Map common DC language tag values to ISO 639-1 codes
+_EPUB_LANG_MAP: dict[str, str] = {
+    "ru": "ru", "rus": "ru", "russian": "ru",
+    "kk": "kk", "kaz": "kk", "kazakh": "kk",
+    "tt": "tt", "tat": "tt", "tatar": "tt",
+    "en": "en", "eng": "en", "english": "en",
+}
+
+
+def _normalize_epub_language(raw: str | None) -> str | None:
+    """Map a raw DC language tag to an ISO 639-1 code, or return None."""
+    if not raw:
+        return None
+    return _EPUB_LANG_MAP.get(raw.strip().lower())
+
 
 def _normalize_title_from_path(path: Path) -> str:
     stem = _TITLE_SPLIT_RE.sub(" ", path.stem)
@@ -68,15 +83,30 @@ class EPUBAdapter:
         return sniffed_bytes.startswith(b"PK\x03\x04")
 
     def extract(self, path: Path) -> ExtractedDocument:
+        from librar.ingestion.language_detection import detect_language
+
         book = epub.read_epub(str(path))
         metadata = self._extract_metadata(path, book)
         blocks = self._extract_blocks(book)
+
+        # If DC metadata didn't yield a recognized ISO language, detect from text
+        if not metadata.language:
+            sample_text = " ".join(b.text for b in blocks[:30])
+            detected = detect_language(sample_text)
+            metadata = ExtractedMetadata(
+                title=metadata.title,
+                author=metadata.author,
+                language=detected,
+                format_name=metadata.format_name,
+            )
+
         return ExtractedDocument(source_path=str(path), metadata=metadata, blocks=blocks)
 
     def _extract_metadata(self, path: Path, book: epub.EpubBook) -> ExtractedMetadata:
         title = _first_non_empty(book.get_metadata("DC", "title")) or _normalize_title_from_path(path)
         author = _first_non_empty(book.get_metadata("DC", "creator"))
-        language = _first_non_empty(book.get_metadata("DC", "language"))
+        raw_language = _first_non_empty(book.get_metadata("DC", "language"))
+        language = _normalize_epub_language(raw_language)
         return ExtractedMetadata(title=title, author=author, language=language, format_name="epub")
 
     def _extract_blocks(self, book: epub.EpubBook) -> list[DocumentBlock]:

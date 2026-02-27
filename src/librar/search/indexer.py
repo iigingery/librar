@@ -98,11 +98,12 @@ class SearchIndexer:
                     continue
 
                 ingested = self._ingestor.ingest(file_path)
+                book_language = ingested.document.metadata.language or "ru"
                 chunk_rows = [
                     ChunkRow(
                         chunk_no=chunk_no,
                         raw_text=chunk.text,
-                        lemma_text=normalize_text(chunk.text),
+                        lemma_text=normalize_text(chunk.text, language=book_language),
                         page=chunk.source.page,
                         chapter=chunk.source.chapter,
                         item_id=chunk.source.item_id,
@@ -117,6 +118,7 @@ class SearchIndexer:
                     title=ingested.document.metadata.title,
                     author=ingested.document.metadata.author,
                     format_name=ingested.document.metadata.format_name,
+                    language=ingested.document.metadata.language,
                     fingerprint=fingerprint,
                     mtime_ns=mtime_ns,
                     chunks=chunk_rows,
