@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 import sqlite3
 
@@ -46,6 +46,17 @@ class SearchHit:
             "rank": self.rank,
             "excerpt": self.excerpt,
         }
+
+
+@dataclass
+class SearchFilters:
+    """Optional filters applied on top of FTS search results."""
+
+    language: str | None = None          # ISO 639-1 code, e.g. "kk"
+    category_ids: list[int] | None = None
+    year_from: int | None = None         # inclusive lower bound
+    year_to: int | None = None           # inclusive upper bound
+    tag: str | None = None               # match against tags.name
 
 
 def _extract_terms(text: str) -> list[str]:
@@ -94,6 +105,7 @@ def search_chunks(
     phrase_mode: bool = False,
     author_filter: str | None = None,
     format_filter: str | None = None,
+    filters: SearchFilters | None = None,
 ) -> list[SearchHit]:
     match_expression = build_match_expression(query, phrase_mode=phrase_mode)
     if not match_expression:
@@ -111,6 +123,39 @@ def search_chunks(
         where_clauses.append("LOWER(COALESCE(b.format, '')) = ?")
         params.append(format_filter.strip().lower())
 
+    if filters is not None:
+        if filters.language and filters.language.strip():
+            where_clauses.append("LOWER(COALESCE(b.language, '')) = ?")
+            params.append(filters.language.strip().lower())
+
+        if filters.category_ids:
+            placeholders = ",".join("?" * len(filters.category_ids))
+            where_clauses.append(
+                f"EXISTS ("
+                f"SELECT 1 FROM book_categories bc "
+                f"WHERE bc.book_id = b.id AND bc.category_id IN ({placeholders}))"
+            )
+            params.extend(filters.category_ids)
+
+        if filters.year_from is not None or filters.year_to is not None:
+            yf = filters.year_from if filters.year_from is not None else 0
+            yt = filters.year_to if filters.year_to is not None else 9999
+            where_clauses.append(
+                "EXISTS ("
+                "SELECT 1 FROM timeline_events te "
+                "WHERE te.book_id = b.id AND te.year_from <= ? AND te.year_to >= ?)"
+            )
+            params.extend([yt, yf])
+
+        if filters.tag and filters.tag.strip():
+            where_clauses.append(
+                "EXISTS ("
+                "SELECT 1 FROM book_tags bt "
+                "JOIN tags t ON t.id = bt.tag_id "
+                "WHERE bt.book_id = b.id AND LOWER(t.name) = ?)"
+            )
+            params.append(filters.tag.strip().lower())
+
     sql = f"""
         SELECT
             b.source_path AS source_path,
@@ -126,7 +171,7 @@ def search_chunks(
             c.char_end AS char_end,
             c.raw_text AS raw_text,
             bm25(chunks_fts, 1.5, 1.0) AS rank,
-            snippet(chunks_fts, 0, '[', ']', ' ... ', 24) AS excerpt
+            snippet(chunks_fts, 0, '\u00ab', '\u00bb', ' \u2026 ', 32) AS excerpt
         FROM chunks_fts
         JOIN chunks c ON c.id = chunks_fts.rowid
         JOIN books b ON b.id = c.book_id
